@@ -35,7 +35,7 @@ static struct ltproto_ctx *lib_ctx = NULL;
 void
 ltproto_init (void)
 {
-	int i, max_priority = INT_FAST32_MIN;
+	int i, max_priority = INT_MIN;
 	struct ltproto_module *mod;
 
 	lib_ctx = calloc (1, sizeof (struct ltproto_ctx));
@@ -362,7 +362,6 @@ ltproto_destroy (void)
 {
 	struct ltproto_module *mod, *mod_tmp;
 	struct ltproto_socket *sk, *sk_tmp;
-	int i;
 
 	/* Close all sockets */
 	HASH_ITER (hh, lib_ctx->sockets, sk, sk_tmp) {
