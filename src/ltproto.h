@@ -1,0 +1,148 @@
+/* Copyright (c) 2013, Vsevolod Stakhov
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *       * Redistributions of source code must retain the above copyright
+ *         notice, this list of conditions and the following disclaimer.
+ *       * Redistributions in binary form must reproduce the above copyright
+ *         notice, this list of conditions and the following disclaimer in the
+ *         documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED ''AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL AUTHOR BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+#ifndef LTPROTO_H_
+#define LTPROTO_H_
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <unistd.h>
+
+/**
+ * @file ltproto.h
+ * @author Vsevolod Stakhov <vsevolod@highsecure.ru>
+ * @section DESCRIPTION
+ *
+ * Ltproto is a modular system of local transport protocols implemented completely in
+ * userspace. Ltproto must be initialized before using by calling ltproto_init function.
+ * The specific algorithm of local transport can be specified by calling ltproto_select_module,
+ * the best algorithm is used by default.
+ *
+ * Ltproto supports BSD socket like interface for operations, however, it supports only
+ * SOCK_STREAM sockets at the moment.
+ */
+
+/**
+ * Init ltproto library
+ */
+void ltproto_init (void);
+
+/**
+ * Select desired module by name
+ * @param module name of the module
+ * @return pointer to module or -1 in case of error
+ */
+void* ltproto_select_module (const char *module);
+
+/**
+ * Create new ltproto socket
+ * @param module pointer to module that should be used for this socket, if NULL the default module is selected
+ * @return socket descriptor or -1 in case of error, see errno variable for details
+ */
+int ltproto_socket (void *module);
+
+/**
+ * Set up an option for a socket. Currently only O_NONBLOCK is supported.
+ * @param sock socket descriptor
+ * @param optname an integer associated with option (O_NONBLOCK, for example)
+ * @param optvalue a value of option
+ * @return 0 if succeeded, -1 in case of error, see errno variable for details
+ */
+int ltproto_setsockopt (int sock, int optname, int optvalue);
+
+/**
+ * Bind socket to a specific address
+ * @param sock socket descriptor
+ * @param addr sockaddr structure (currently only sockaddr_in is supported)
+ * @param addrlen length of addr structure (should be sizeof(struct sockaddr_in))
+ * @return 0 if succeeded, -1 in case of error, see errno variable for details
+ */
+int ltproto_bind (int sock, const struct sockaddr *addr, socklen_t addrlen);
+
+/**
+ * Set listen mode for a specific socket
+ * @param sock socket descriptor
+ * @param backlog listen backlog queue size
+ * @return 0 if succeeded, -1 in case of error, see errno variable for details
+ */
+int ltproto_listen (int sock, int backlog);
+
+/**
+ * Accept new connection from a listening socket
+ * @param sock socket descriptor
+ * @param addr sockaddr structure (currently only sockaddr_in is supported) that will be filled
+ * @param addrlen length of addr structure (should be sizeof(struct sockaddr_in))
+ * @return 0 if succeeded, -1 in case of error, see errno variable for details
+ */
+int ltproto_accept (int sock, struct sockaddr *addr, socklen_t *addrlen);
+
+/**
+ * Connect a socket to a peer
+ * @param socks socket descriptor
+ * @param addr sockaddr structure (currently only sockaddr_in is supported) of a peer
+ * @param addrlen length of addr structure (should be sizeof(struct sockaddr_in))
+ * @return 0 if succeeded, -1 in case of error, see errno variable for details
+ */
+int ltproto_connect (int sock, const struct sockaddr *addr, socklen_t addrlen);
+
+/**
+ * Read data from a socket
+ * @param sock socket descriptor
+ * @param buf buffer pointer
+ * @param len length to read
+ * @return number of bytes read or -1 in case of error
+ */
+int ltproto_read (int sock, void *buf, size_t len);
+
+/**
+ * Write data to a socket
+ * @param sock socket descriptor
+ * @param buf buffer pointer
+ * @param len length to write
+ * @return number of bytes written or -1 in case of error
+ */
+int ltproto_write (int sock, const void *buf, size_t len);
+
+/**
+ * Close a socket
+ * @param sock socket descriptor
+ * @return 0 if succeeded, -1 in case of error, see errno variable for details
+ */
+int ltproto_close (int sock);
+
+/**
+ * Wait for an event on a non-blocking socket
+ * @param sock socket descriptor
+ * @param what POLLIN for read event and POLLOUT for write one (can be mixed via logical OR)
+ * @param tv timeout for waiting
+ * @return 0 in case of timeout, 1 in case of event happened, -1 in case of error
+ */
+int ltproto_select (int sock, short what, const struct timeval *tv);
+
+/**
+ * Deinitialize of ltproto library
+ */
+void ltproto_destroy (void);
+
+#endif /* LTPROTO_H_ */
