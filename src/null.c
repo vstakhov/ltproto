@@ -47,6 +47,7 @@ int null_destroy_func (struct lt_module_ctx *ctx);
 
 module_t null_module = {
 	.name = "null",
+	.priority = 0,
 	.module_init_func = null_init_func,
 	.module_socket_func = null_socket_func,
 	.module_setopts_func = null_setopts_func,

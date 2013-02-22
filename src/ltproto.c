@@ -35,7 +35,7 @@ static struct ltproto_ctx *lib_ctx = NULL;
 void
 ltproto_init (void)
 {
-	int i;
+	int i, max_priority = INT_FAST32_MIN;
 	struct ltproto_module *mod;
 
 	lib_ctx = calloc (1, sizeof (struct ltproto_ctx));
@@ -56,8 +56,10 @@ ltproto_init (void)
 			MOD_TABLE_WRLOCK (lib_ctx);
 			HASH_ADD_KEYPTR (hh, lib_ctx->modules, mod->name, strlen (mod->name), mod);
 			MOD_TABLE_UNLOCK (lib_ctx);
-			/* Add the current module as default one */
-			lib_ctx->default_mod = mod;
+			if (modules[i]->priority > max_priority) {
+				lib_ctx->default_mod = mod;
+				max_priority = modules[i]->priority;
+			}
 		}
 		else {
 			break;
@@ -358,6 +360,23 @@ ltproto_select (int sock, short what, const struct timeval *tv)
 void
 ltproto_destroy (void)
 {
-	/** TODO: add sockets and modules closing */
+	struct ltproto_module *mod, *mod_tmp;
+	struct ltproto_socket *sk, *sk_tmp;
+	int i;
+
+	/* Close all sockets */
+	HASH_ITER (hh, lib_ctx->sockets, sk, sk_tmp) {
+		sk->mod->mod->module_close_func (sk->mod->ctx, sk->fd);
+		HASH_DEL (lib_ctx->sockets, sk);
+		free (sk);
+	}
+
+	/* Clear all modules */
+	HASH_ITER (hh, lib_ctx->modules, mod, mod_tmp) {
+		mod->mod->module_destroy_func (mod->ctx);
+		HASH_DEL (lib_ctx->modules, mod);
+		free (mod);
+	}
+
 	free (lib_ctx);
 }

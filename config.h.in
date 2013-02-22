@@ -225,6 +225,7 @@ struct lt_module_ctx;
 
 typedef struct module_s {
     char *name;
+    int priority;
     int (*module_init_func)(struct lt_module_ctx **ctx);
     int (*module_socket_func)(struct lt_module_ctx *ctx);
     int (*module_setopts_func)(struct lt_module_ctx *ctx, int sock, int optname, int optvalue);
