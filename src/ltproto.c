@@ -30,16 +30,42 @@
 static struct ltproto_ctx *lib_ctx = NULL;
 
 /**
+ * Find a socket in socket array or hash
+ * @param ctx library context
+ * @param fd socket descriptor
+ * @return sk structure or NULL if this fd was not found
+ */
+static struct ltproto_socket*
+find_sk (struct ltproto_ctx *ctx, int fd)
+{
+	struct ltproto_socket *sk;
+
+	if (fd < SK_ARRAY_BUCKETS) {
+		return lt_ptr_atomic_get (&ctx->sockets_ar[fd]);
+	}
+	else {
+		SOCK_TABLE_RDLOCK (ctx);
+		HASH_FIND_INT (ctx->sockets_hash, &fd, sk);
+		SOCK_TABLE_UNLOCK (ctx);
+	}
+
+	return sk;
+}
+
+/**
  * Init ltproto library
  */
 void
 ltproto_init (void)
 {
-	int i, max_priority = INT_FAST32_MIN;
+	int i, max_priority = INT_MIN;
 	struct ltproto_module *mod;
 
 	lib_ctx = calloc (1, sizeof (struct ltproto_ctx));
 	assert (lib_ctx != NULL);
+
+	lib_ctx->sockets_ar = calloc (SK_ARRAY_BUCKETS, sizeof (struct ltproto_socket *));
+	assert (lib_ctx->sockets_ar != NULL);
 
 #ifndef THREAD_UNSAFE
 	pthread_rwlock_init (&lib_ctx->sock_lock, NULL);
@@ -112,13 +138,23 @@ ltproto_socket (void *module)
 	assert (mod != NULL);
 	nsock = mod->mod->module_socket_func (mod->ctx);
 	if (nsock != -1) {
+		if (find_sk (lib_ctx, nsock) != NULL) {
+			/* Duplicate socket, internal error */
+			errno = EINVAL;
+			return -1;
+		}
 		sk = calloc (1, sizeof (struct ltproto_socket));
 		assert (sk != NULL);
 		sk->fd = nsock;
 		sk->mod = mod;
-		SOCK_TABLE_WRLOCK (lib_ctx);
-		HASH_ADD_INT (lib_ctx->sockets, fd, sk);
-		SOCK_TABLE_UNLOCK (lib_ctx);
+		if (nsock < SK_ARRAY_BUCKETS) {
+			lt_ptr_atomic_set (&lib_ctx->sockets_ar[nsock], sk);
+		}
+		else {
+			SOCK_TABLE_WRLOCK (lib_ctx);
+			HASH_ADD_INT (lib_ctx->sockets_hash, fd, sk);
+			SOCK_TABLE_UNLOCK (lib_ctx);
+		}
 	}
 
 	return nsock;
@@ -137,9 +173,7 @@ ltproto_setsockopt (int sock, int optname, int optvalue)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
 		return sk->mod->mod->module_setopts_func (sk->mod->ctx, sock, optname, optvalue);
@@ -162,9 +196,7 @@ ltproto_bind (int sock, const struct sockaddr *addr, socklen_t addrlen)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
 		return sk->mod->mod->module_bind_func (sk->mod->ctx, sock, addr, addrlen);
@@ -186,9 +218,7 @@ ltproto_listen (int sock, int backlog)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
 		return sk->mod->mod->module_listen_func (sk->mod->ctx, sock, backlog);
@@ -211,9 +241,7 @@ ltproto_accept (int sock, struct sockaddr *addr, socklen_t *addrlen)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
 		return sk->mod->mod->module_accept_func (sk->mod->ctx, sock, addr, addrlen);
@@ -236,9 +264,7 @@ ltproto_connect (int sock, const struct sockaddr *addr, socklen_t addrlen)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
 		return sk->mod->mod->module_bind_func (sk->mod->ctx, sock, addr, addrlen);
@@ -261,9 +287,7 @@ ltproto_read (int sock, void *buf, size_t len)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
 		return sk->mod->mod->module_read_func (sk->mod->ctx, sock, buf, len);
@@ -286,9 +310,7 @@ ltproto_write (int sock, const void *buf, size_t len)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
 		return sk->mod->mod->module_write_func (sk->mod->ctx, sock, buf, len);
@@ -310,16 +332,19 @@ ltproto_close (int sock)
 	int ret;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
 		ret = sk->mod->mod->module_close_func (sk->mod->ctx, sock);
 		if (ret != -1) {
-			SOCK_TABLE_WRLOCK (lib_ctx);
-			HASH_DEL (lib_ctx->sockets, sk);
-			SOCK_TABLE_UNLOCK (lib_ctx);
+			if (sock < SK_ARRAY_BUCKETS) {
+				lt_ptr_atomic_set (&lib_ctx->sockets_ar[sock], NULL);
+			}
+			else {
+				SOCK_TABLE_WRLOCK (lib_ctx);
+				HASH_DEL (lib_ctx->sockets_hash, sk);
+				SOCK_TABLE_UNLOCK (lib_ctx);
+			}
 			free (sk);
 		}
 		return ret;
@@ -342,9 +367,7 @@ ltproto_select (int sock, short what, const struct timeval *tv)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
 		return sk->mod->mod->module_select_func (sk->mod->ctx, sock, what, tv);
@@ -365,9 +388,16 @@ ltproto_destroy (void)
 	int i;
 
 	/* Close all sockets */
-	HASH_ITER (hh, lib_ctx->sockets, sk, sk_tmp) {
+	for (i = 0; i < SK_ARRAY_BUCKETS; i ++) {
+		if (lib_ctx->sockets_ar[i] != NULL) {
+			sk = lib_ctx->sockets_ar[i];
+			sk->mod->mod->module_close_func (sk->mod->ctx, sk->fd);
+			free (sk);
+		}
+	}
+	HASH_ITER (hh, lib_ctx->sockets_hash, sk, sk_tmp) {
 		sk->mod->mod->module_close_func (sk->mod->ctx, sk->fd);
-		HASH_DEL (lib_ctx->sockets, sk);
+		HASH_DEL (lib_ctx->sockets_hash, sk);
 		free (sk);
 	}
 
