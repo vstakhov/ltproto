@@ -222,22 +222,23 @@
 #include <signal.h>
 
 struct lt_module_ctx;
+struct ltproto_socket;
 
 typedef struct module_s {
     char *name;
     int priority;
     int (*module_init_func)(struct lt_module_ctx **ctx);
-    int (*module_socket_func)(struct lt_module_ctx *ctx);
-    int (*module_setopts_func)(struct lt_module_ctx *ctx, int sock, int optname, int optvalue);
-    int (*module_bind_func)(struct lt_module_ctx *ctx, int sock, const struct sockaddr *addr, socklen_t addrlen);
-    int (*module_listen_func)(struct lt_module_ctx *ctx, int sock, int backlog);
-    int (*module_accept_func)(struct lt_module_ctx *ctx, int sock, struct sockaddr *addr, socklen_t *addrlen);
-    int (*module_connect_func)(struct lt_module_ctx *ctx, int sock, const struct sockaddr *addr, socklen_t addrlen);
-    ssize_t (*module_read_func)(struct lt_module_ctx *ctx, int sock, void *buf, size_t len);
-    ssize_t (*module_write_func)(struct lt_module_ctx *ctx, int sock, const void *buf, size_t len);
+    struct ltproto_socket * (*module_socket_func)(struct lt_module_ctx *ctx);
+    int (*module_setopts_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue);
+    int (*module_bind_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
+    int (*module_listen_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog);
+    int (*module_accept_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen);
+    int (*module_connect_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
+    ssize_t (*module_read_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
+    ssize_t (*module_write_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
     /** TODO: add iovector functions as well */
-    int (*module_select_func)(struct lt_module_ctx *ctx, int sock, short what, const struct timeval *tv);
-    int (*module_close_func)(struct lt_module_ctx *ctx, int sock);
+    int (*module_select_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
+    int (*module_close_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk);
     int (*module_destroy_func)(struct lt_module_ctx *ctx);
 } module_t;
 

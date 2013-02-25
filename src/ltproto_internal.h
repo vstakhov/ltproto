@@ -62,6 +62,7 @@
 #  define _GNUC_EXTENSION
 #endif
 
+#ifdef __GNUC__
 #define lt_ptr_atomic_get(ptr) 								\
   (_GNUC_EXTENSION ({										\
     __sync_synchronize ();									\
@@ -73,7 +74,18 @@
     *(ptr) = (__typeof__ (*(ptr))) (uintptr_t) (nptr);		\
     __sync_synchronize ();									\
   }))
-
+#else
+/* We have no gnuc intriniscs for memory barriers */
+#define lt_ptr_atomic_get(ptr) 								\
+  (_GNUC_EXTENSION ({										\
+    (void *) *(ptr);										\
+  }))
+#define lt_ptr_atomic_set(ptr, nptr)						\
+  (_GNUC_EXTENSION ({										\
+    (void) (0 ? (void *) *(ptr) : 0);						\
+    *(ptr) = (__typeof__ (*(ptr))) (uintptr_t) (nptr);		\
+  }))
+#endif
 
 /**
  * Asbtract module ctx
@@ -99,6 +111,7 @@ struct ltproto_socket {
 	int fd;							// Socket descriptor
 	struct ltproto_module *mod;		// Module handling this socket
 	UT_hash_handle hh;				// Hash entry
+	u_char mod_data[1];				// Module's private data
 };
 
 /**

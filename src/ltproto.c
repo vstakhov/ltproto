@@ -124,7 +124,6 @@ ltproto_select_module (const char *module)
 int
 ltproto_socket (void *module)
 {
-	int nsock;
 	struct ltproto_module *mod;
 	struct ltproto_socket *sk;
 
@@ -136,19 +135,16 @@ ltproto_socket (void *module)
 		mod = lib_ctx->default_mod;
 	}
 	assert (mod != NULL);
-	nsock = mod->mod->module_socket_func (mod->ctx);
-	if (nsock != -1) {
-		if (find_sk (lib_ctx, nsock) != NULL) {
+	sk = mod->mod->module_socket_func (mod->ctx);
+	if (sk != NULL) {
+		if (find_sk (lib_ctx, sk->fd) != NULL) {
 			/* Duplicate socket, internal error */
 			errno = EINVAL;
 			return -1;
 		}
-		sk = calloc (1, sizeof (struct ltproto_socket));
-		assert (sk != NULL);
-		sk->fd = nsock;
 		sk->mod = mod;
-		if (nsock < SK_ARRAY_BUCKETS) {
-			lt_ptr_atomic_set (&lib_ctx->sockets_ar[nsock], sk);
+		if (sk->fd < SK_ARRAY_BUCKETS) {
+			lt_ptr_atomic_set (&lib_ctx->sockets_ar[sk->fd], sk);
 		}
 		else {
 			SOCK_TABLE_WRLOCK (lib_ctx);
@@ -156,8 +152,11 @@ ltproto_socket (void *module)
 			SOCK_TABLE_UNLOCK (lib_ctx);
 		}
 	}
+	else {
+		return -1;
+	}
 
-	return nsock;
+	return sk->fd;
 }
 
 /**
@@ -176,7 +175,7 @@ ltproto_setsockopt (int sock, int optname, int optvalue)
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_setopts_func (sk->mod->ctx, sock, optname, optvalue);
+		return sk->mod->mod->module_setopts_func (sk->mod->ctx, sk, optname, optvalue);
 	}
 
 	errno = -EBADF;
@@ -199,7 +198,7 @@ ltproto_bind (int sock, const struct sockaddr *addr, socklen_t addrlen)
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_bind_func (sk->mod->ctx, sock, addr, addrlen);
+		return sk->mod->mod->module_bind_func (sk->mod->ctx, sk, addr, addrlen);
 	}
 
 	errno = -EBADF;
@@ -221,7 +220,7 @@ ltproto_listen (int sock, int backlog)
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_listen_func (sk->mod->ctx, sock, backlog);
+		return sk->mod->mod->module_listen_func (sk->mod->ctx, sk, backlog);
 	}
 
 	errno = -EBADF;
@@ -244,7 +243,7 @@ ltproto_accept (int sock, struct sockaddr *addr, socklen_t *addrlen)
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_accept_func (sk->mod->ctx, sock, addr, addrlen);
+		return sk->mod->mod->module_accept_func (sk->mod->ctx, sk, addr, addrlen);
 	}
 
 	errno = -EBADF;
@@ -267,7 +266,7 @@ ltproto_connect (int sock, const struct sockaddr *addr, socklen_t addrlen)
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_bind_func (sk->mod->ctx, sock, addr, addrlen);
+		return sk->mod->mod->module_bind_func (sk->mod->ctx, sk, addr, addrlen);
 	}
 
 	errno = -EBADF;
@@ -290,7 +289,7 @@ ltproto_read (int sock, void *buf, size_t len)
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_read_func (sk->mod->ctx, sock, buf, len);
+		return sk->mod->mod->module_read_func (sk->mod->ctx, sk, buf, len);
 	}
 
 	errno = -EBADF;
@@ -313,7 +312,7 @@ ltproto_write (int sock, const void *buf, size_t len)
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_write_func (sk->mod->ctx, sock, buf, len);
+		return sk->mod->mod->module_write_func (sk->mod->ctx, sk, buf, len);
 	}
 
 	errno = -EBADF;
@@ -335,7 +334,7 @@ ltproto_close (int sock)
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		ret = sk->mod->mod->module_close_func (sk->mod->ctx, sock);
+		ret = sk->mod->mod->module_close_func (sk->mod->ctx, sk);
 		if (ret != -1) {
 			if (sock < SK_ARRAY_BUCKETS) {
 				lt_ptr_atomic_set (&lib_ctx->sockets_ar[sock], NULL);
@@ -370,7 +369,7 @@ ltproto_select (int sock, short what, const struct timeval *tv)
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_select_func (sk->mod->ctx, sock, what, tv);
+		return sk->mod->mod->module_select_func (sk->mod->ctx, sk, what, tv);
 	}
 
 	errno = -EBADF;
@@ -391,12 +390,12 @@ ltproto_destroy (void)
 	for (i = 0; i < SK_ARRAY_BUCKETS; i ++) {
 		if (lib_ctx->sockets_ar[i] != NULL) {
 			sk = lib_ctx->sockets_ar[i];
-			sk->mod->mod->module_close_func (sk->mod->ctx, sk->fd);
+			sk->mod->mod->module_close_func (sk->mod->ctx, sk);
 			free (sk);
 		}
 	}
 	HASH_ITER (hh, lib_ctx->sockets_hash, sk, sk_tmp) {
-		sk->mod->mod->module_close_func (sk->mod->ctx, sk->fd);
+		sk->mod->mod->module_close_func (sk->mod->ctx, sk);
 		HASH_DEL (lib_ctx->sockets_hash, sk);
 		free (sk);
 	}
