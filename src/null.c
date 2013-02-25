@@ -30,7 +30,7 @@
  * @file null.c
  * @section DESCRIPTION
  *
- * Fake module for ltopt that does nothing
+ * Test module for ltopt that just uses ordinary BSD sockets
  */
 
 int null_init_func (struct lt_module_ctx **ctx);
