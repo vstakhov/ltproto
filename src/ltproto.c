@@ -35,7 +35,7 @@ static struct ltproto_ctx *lib_ctx = NULL;
  * @param fd socket descriptor
  * @return sk structure or NULL if this fd was not found
  */
-static struct ltproto_socket*
+static inline struct ltproto_socket*
 find_sk (struct ltproto_ctx *ctx, int fd)
 {
 	struct ltproto_socket *sk;
@@ -237,13 +237,34 @@ ltproto_listen (int sock, int backlog)
 int
 ltproto_accept (int sock, struct sockaddr *addr, socklen_t *addrlen)
 {
-	struct ltproto_socket *sk;
+	struct ltproto_socket *sk, *ask;
 
 	assert (lib_ctx != NULL);
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_accept_func (sk->mod->ctx, sk, addr, addrlen);
+		ask = sk->mod->mod->module_accept_func (sk->mod->ctx, sk, addr, addrlen);
+		if (ask != NULL) {
+			if (find_sk (lib_ctx, ask->fd) != NULL) {
+				/* Duplicate socket, internal error */
+				errno = EINVAL;
+				return -1;
+			}
+			ask->mod = sk->mod;
+			if (ask->fd < SK_ARRAY_BUCKETS) {
+				lt_ptr_atomic_set (&lib_ctx->sockets_ar[ask->fd], ask);
+			}
+			else {
+				SOCK_TABLE_WRLOCK (lib_ctx);
+				HASH_ADD_INT (lib_ctx->sockets_hash, fd, ask);
+				SOCK_TABLE_UNLOCK (lib_ctx);
+			}
+		}
+		else {
+			errno = EINVAL;
+			return -1;
+		}
+		return ask->fd;
 	}
 
 	errno = -EBADF;
@@ -266,7 +287,7 @@ ltproto_connect (int sock, const struct sockaddr *addr, socklen_t addrlen)
 	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_bind_func (sk->mod->ctx, sk, addr, addrlen);
+		return sk->mod->mod->module_connect_func (sk->mod->ctx, sk, addr, addrlen);
 	}
 
 	errno = -EBADF;

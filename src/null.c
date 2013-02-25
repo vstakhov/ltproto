@@ -38,7 +38,7 @@ struct ltproto_socket* null_socket_func (struct lt_module_ctx *ctx);
 int null_setopts_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue);
 int null_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
 int null_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog);
-int null_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen);
+struct ltproto_socket* null_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen);
 int null_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
 ssize_t null_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
 ssize_t null_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
@@ -97,6 +97,9 @@ null_setopts_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int opt
 int
 null_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
+	int reuseaddr = 1;
+
+	setsockopt (sk->fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof (int));
 	return bind (sk->fd, addr, addrlen);
 }
 
@@ -106,10 +109,22 @@ null_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int back
 	return listen (sk->fd, backlog);
 }
 
-int
+struct ltproto_socket *
 null_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen)
 {
-	return accept (sk->fd, addr, addrlen);
+	struct ltproto_socket *nsk;
+	int afd;
+
+	afd = accept (sk->fd, addr, addrlen);
+	if (afd == -1) {
+		return NULL;
+	}
+
+	nsk = calloc (1, sizeof (struct ltproto_socket));
+	assert (nsk != NULL);
+	nsk->fd = afd;
+
+	return nsk;
 }
 
 int

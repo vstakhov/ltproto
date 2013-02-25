@@ -84,6 +84,9 @@
 
 #cmakedefine THREAD_UNSAFE		 1
 
+#cmakedefine HAVE_CLOCK_MONOTONIC_RAW 1
+
+
 /* sys/types */
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
@@ -232,7 +235,7 @@ typedef struct module_s {
     int (*module_setopts_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue);
     int (*module_bind_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
     int (*module_listen_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog);
-    int (*module_accept_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen);
+    struct ltproto_socket * (*module_accept_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen);
     int (*module_connect_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
     ssize_t (*module_read_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
     ssize_t (*module_write_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
