@@ -57,7 +57,7 @@ int
 main (int argc, char **argv)
 {
 	pid_t spid;
-	void *tdata;
+	void *tdata, *mod;
 	time_t msec;
 	sigset_t sigmask;
 	struct sigaction sa;
@@ -72,16 +72,19 @@ main (int argc, char **argv)
 	ltproto_init ();
 
 	/* Start a simple test */
-	spid = fork_server (50009, 1024 * 1024);
+	printf ("Test for TCP sockets\n");
+	fflush (stdout);
+	mod = ltproto_select_module ("null");
+	spid = fork_server (50009, 1024 * 1024, mod);
 	assert (spid != -1);
 	wait_for_server ();
 	start_test_time (&tdata);
-	assert (do_client (50009, 8 * 1024 * 1024, 1024) != -1);
+	assert (do_client (50009, 8 * 1024 * 1024, 1024, mod) != -1);
 	msec = end_test_time (tdata);
 	printf ("Send buffer: 8Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.3f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
-	assert (do_client (50009, 4 * 1024 * 1024, 2048) != -1);
+	assert (do_client (50009, 4 * 1024 * 1024, 2048, mod) != -1);
 	msec = end_test_time (tdata);
 	printf ("Send buffer: 4Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.3f milliseconds\n", round_test_time (msec));
 

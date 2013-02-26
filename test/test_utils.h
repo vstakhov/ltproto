@@ -52,7 +52,7 @@ double round_test_time (time_t microseconds);
  * @param recv_buffer_size size of receive buffer
  * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
  */
-pid_t fork_server (u_short port, u_int recv_buffer_size);
+pid_t fork_server (u_short port, u_int recv_buffer_size, void *mod);
 
 /**
  * Perform client test
@@ -61,6 +61,6 @@ pid_t fork_server (u_short port, u_int recv_buffer_size);
  * @param repeat_count how many times this buffer should be sent
  * @return
  */
-int do_client (u_short port, u_int send_buffer_size, u_int repeat_count);
+int do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod);
 
 #endif /* TEST_UTILS_H_ */

@@ -26,6 +26,9 @@
 #include "ltproto.h"
 #include "ltproto_internal.h"
 #include <assert.h>
+#ifdef HAVE_OPENSSL
+#include <openssl/rand.h>
+#endif
 
 static struct ltproto_ctx *lib_ctx = NULL;
 
@@ -66,6 +69,21 @@ ltproto_init (void)
 
 	lib_ctx->sockets_ar = calloc (SK_ARRAY_BUCKETS, sizeof (struct ltproto_socket *));
 	assert (lib_ctx->sockets_ar != NULL);
+
+	/* Init pseudo-random generator using openssl if possible */
+#ifdef HAVE_OPENSSL
+	int seed;
+	if (access ("/dev/random", R_OK) != -1) {
+		RAND_load_file ("/dev/urandom", 256);
+	}
+	if (RAND_bytes ((char *)&seed, sizeof (seed)) != 1) {
+		seed = time (NULL);
+	}
+	srand (seed);
+#else
+	/* Unsafe way */
+	srand (time (NULL));
+#endif
 
 #ifndef THREAD_UNSAFE
 	pthread_rwlock_init (&lib_ctx->sock_lock, NULL);

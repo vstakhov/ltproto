@@ -137,7 +137,7 @@ round_test_time (time_t microseconds)
  * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
  */
 pid_t
-fork_server (u_short port, u_int recv_buffer_size)
+fork_server (u_short port, u_int recv_buffer_size, void *mod)
 {
 	pid_t pid;
 	int sock, conn;
@@ -157,7 +157,7 @@ fork_server (u_short port, u_int recv_buffer_size)
 	}
 
 do_client:
-	sock = ltproto_socket (NULL);
+	sock = ltproto_socket (mod);
 	assert (sock != -1);
 
 	sin.sin_family = AF_INET;
@@ -192,7 +192,7 @@ do_client:
  * @return
  */
 int
-do_client (u_short port, u_int send_buffer_size, u_int repeat_count)
+do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
 {
 	int sock;
 	u_int i;
@@ -203,7 +203,7 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count)
 	sin.sin_port = htons (port);
 	sin.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
 
-	sock = ltproto_socket (NULL);
+	sock = ltproto_socket (mod);
 	assert (sock != -1);
 
 	send_buf = malloc (send_buffer_size);

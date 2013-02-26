@@ -86,6 +86,10 @@
 
 #cmakedefine HAVE_CLOCK_MONOTONIC_RAW 1
 
+#cmakedefine HAVE_SCHED_H		 1
+#cmakedefine HAVE_SCHED_SETAFFINITY 1
+
+#cmakedefine HAVE_OPENSSL		1
 
 /* sys/types */
 #ifdef HAVE_SYS_TYPES_H
