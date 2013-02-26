@@ -30,7 +30,30 @@
  * @file udp_shmem.c
  * @section DESCRIPTION
  *
- * A module that uses shared memory for data transfer and udp for signalling
+ * A module that uses shared memory for data transfer and udp for signalling.
+ *
+ * UDP shmem module uses a single socket to listen and accept events, however
+ * it is dup(2)ed for accepted connection.
+ * Here is the logic of connections handling:
+ *
+ * - Each of read functions, such as accept, read triggers network reading, but we
+ * know that UDP transport is not ordered and we can receive non-expected event
+ * (like data segment when we are awaiting for connection request). To avoid such
+ * situation it is required to keep incoming queue for each socket. Then after
+ * receiving a non-expected command it is possible to search for appropriate socket and
+ * enqueue request.
+ *
+ * - To allow this logic each connection has specific cookie that is generated from a
+ * pair of random 32 bits number by intersection formulae.
+ *
+ * - After accepting the peer sends CONNECTION_ACK command to inform peer about connection
+ * cookie.
+ *
+ * - If a listening socket is closed, accepted connection will work fine but further connection
+ * attempts will be ignored.
+ *
+ * XXX: this module uses dup, hence, it is not possible to mix blocking and
+ * non-blocking IO for listening socket and accepted sockets.
  */
 
 struct ltproto_udp_command {
@@ -168,7 +191,13 @@ udp_shmem_enqueue_command (struct ltproto_socket_udp *usk, struct ltproto_udp_co
 		case SHMEM_UDP_CMD_CONNECT:
 		case SHMEM_UDP_CMD_CONNECT_ACK:
 			/* Enqueue to parent socket */
-			TAILQ_INSERT_TAIL (&usk->common.data_sock.parent->in_q, cmd_entry, link);
+			if (usk->common.data_sock.parent) {
+				TAILQ_INSERT_TAIL (&usk->common.data_sock.parent->in_q, cmd_entry, link);
+			}
+			else {
+				/* Listening socket was closed */
+				return -1;
+			}
 			break;
 		case SHMEM_UDP_CMD_SEND:
 		case SHMEM_UDP_CMD_ACK:
@@ -208,7 +237,7 @@ udp_shmem_recv_command (struct ltproto_socket_udp *usk, int *saved_errno)
 		}
 		else {
 			*saved_errno = errno;
-		}
+		}/* Do not accept commands that cannot be enqueued */
 		return NULL;
 	}
 
@@ -255,10 +284,11 @@ udp_shmem_expect_command (struct ltproto_socket_udp *usk, u_int cmd, int *saved_
 		}
 
 		if (udp_shmem_enqueue_command (usk, res) == -1) {
-			/* Do not accept commands that cannot be enqueued */
-			*saved_errno = EINVAL;
-			free (res);
-			return NULL;
+			if (res->cmd == cmd) {
+				*saved_errno = EINVAL;
+				free (res);
+				return NULL;
+			}
 		}
 
 		if (res->cmd == cmd) {
@@ -443,7 +473,21 @@ udp_shmem_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, sho
 int
 udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
-	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
+	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk, *csk;
+
+	if (usk->state == SHMEM_UDP_STATE_LISTEN) {
+#ifndef THREAD_SAFE
+		pthread_mutex_lock (&usk->common.listen_sock.acept_lock);
+#endif
+		/* Reset parent on all accepted sockets */
+		for(csk = usk->common.listen_sock.accepted_sk; csk != NULL; csk = csk->hh.next) {
+			csk->common.data_sock.parent = NULL;
+		}
+#ifndef THREAD_SAFE
+		pthread_mutex_unlock (&usk->common.listen_sock.acept_lock);
+#endif
+	}
+
 	return close (sk->fd);
 }
 
