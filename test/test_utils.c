@@ -210,11 +210,13 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
 	assert (send_buf != NULL);
 
 	if (ltproto_connect (sock, (struct sockaddr *)&sin, sizeof (sin)) == -1) {
+		perror ("connect failed");
 		goto err;
 	}
 
 	for (i = 0; i < repeat_count; i ++) {
 		if (ltproto_write (sock, send_buf, send_buffer_size) == -1) {
+			perror ("write failed");
 			goto err;
 		}
 	}

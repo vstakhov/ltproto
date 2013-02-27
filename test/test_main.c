@@ -53,28 +53,16 @@ wait_for_server (void)
 	return -1;
 }
 
-int
-main (int argc, char **argv)
+static void
+perform_module_test_simple (const char *mname)
 {
 	pid_t spid;
 	void *tdata, *mod;
 	time_t msec;
-	sigset_t sigmask;
-	struct sigaction sa;
 
-	sigemptyset (&sigmask);
-	sigaddset (&sigmask, SIGUSR1);
-	memset (&sa, 0, sizeof (sa));
-	sa.sa_mask = sigmask;
-	sa.sa_handler = usr1_handler;
-	sigaction (SIGUSR1, &sa, NULL);
-
-	ltproto_init ();
-
-	/* Start a simple test */
-	printf ("Test for TCP sockets\n");
+	printf ("Test for module: %s\n", mname);
 	fflush (stdout);
-	mod = ltproto_select_module ("null");
+	mod = ltproto_select_module (mname);
 	spid = fork_server (50009, 1024 * 1024, mod);
 	assert (spid != -1);
 	wait_for_server ();
@@ -89,6 +77,27 @@ main (int argc, char **argv)
 	printf ("Send buffer: 4Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.3f milliseconds\n", round_test_time (msec));
 
 	kill (spid, SIGTERM);
+}
+
+int
+main (int argc, char **argv)
+{
+
+	sigset_t sigmask;
+	struct sigaction sa;
+
+	sigemptyset (&sigmask);
+	sigaddset (&sigmask, SIGUSR1);
+	memset (&sa, 0, sizeof (sa));
+	sa.sa_mask = sigmask;
+	sa.sa_handler = usr1_handler;
+	sigaction (SIGUSR1, &sa, NULL);
+
+	ltproto_init ();
+
+	/* Start a simple tests */
+	//perform_module_test_simple ("null");
+	perform_module_test_simple ("udp-shmem");
 
 	ltproto_destroy ();
 

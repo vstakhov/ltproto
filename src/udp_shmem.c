@@ -56,6 +56,12 @@
  * non-blocking IO for listening socket and accepted sockets.
  */
 
+/**
+ * Important notice: since we are implementing local transport it is assumed, that
+ * we have the same byteorder for all peers affected.
+ * If this approach is not true, this code should be adopted to use network
+ * byte order.
+ */
 struct ltproto_udp_command {
 	enum {
 		SHMEM_UDP_CMD_CONNECT = 0,		// Connect to listening socket
@@ -164,10 +170,10 @@ udp_shmem_enqueue_command (struct ltproto_socket_udp *usk, struct ltproto_udp_co
 	if (usk->state == SHMEM_UDP_STATE_LISTEN) {
 		switch (cmd->cmd) {
 		case SHMEM_UDP_CMD_CONNECT:
-		case SHMEM_UDP_CMD_CONNECT_ACK:
 			/* Enqueue to this socket */
 			TAILQ_INSERT_TAIL (&usk->in_q, cmd_entry, link);
 			break;
+		case SHMEM_UDP_CMD_CONNECT_ACK:
 		case SHMEM_UDP_CMD_SEND:
 		case SHMEM_UDP_CMD_ACK:
 		case SHMEM_UDP_CMD_FIN:
@@ -189,7 +195,6 @@ udp_shmem_enqueue_command (struct ltproto_socket_udp *usk, struct ltproto_udp_co
 	else if (usk->state == SHMEM_UDP_STATE_CONNECTED) {
 		switch (cmd->cmd) {
 		case SHMEM_UDP_CMD_CONNECT:
-		case SHMEM_UDP_CMD_CONNECT_ACK:
 			/* Enqueue to parent socket */
 			if (usk->common.data_sock.parent) {
 				TAILQ_INSERT_TAIL (&usk->common.data_sock.parent->in_q, cmd_entry, link);
@@ -202,7 +207,7 @@ udp_shmem_enqueue_command (struct ltproto_socket_udp *usk, struct ltproto_udp_co
 		case SHMEM_UDP_CMD_SEND:
 		case SHMEM_UDP_CMD_ACK:
 		case SHMEM_UDP_CMD_FIN:
-			/* Try to find appropriate socket */
+		case SHMEM_UDP_CMD_CONNECT_ACK:
 			TAILQ_INSERT_TAIL (&usk->in_q, cmd_entry, link);
 			break;
 		}
@@ -223,7 +228,8 @@ udp_shmem_enqueue_command (struct ltproto_socket_udp *usk, struct ltproto_udp_co
 static inline struct ltproto_udp_command*
 udp_shmem_recv_command (struct ltproto_socket_udp *usk, int *saved_errno)
 {
-	struct ltproto_udp_command cmd, *pcmd;
+	struct ltproto_udp_command cmd;
+	struct ltproto_udp_command_entry *pcmd;
 	int r;
 	struct sockaddr_in sin;
 	socklen_t slen = sizeof (struct sockaddr_in);
@@ -244,10 +250,10 @@ udp_shmem_recv_command (struct ltproto_socket_udp *usk, int *saved_errno)
 	/* Actually we alloc memory for the whole entry here */
 	pcmd = malloc (sizeof (struct ltproto_udp_command_entry));
 	assert (pcmd != NULL);
-	memcpy (pcmd, &cmd, sizeof (cmd));
-	memcpy (pcmd + sizeof (cmd), &sin, slen);
+	memcpy (&pcmd->cmd, &cmd, sizeof (cmd));
+	memcpy (&pcmd->sin, &sin, slen);
 
-	return pcmd;
+	return (struct ltproto_udp_command*)pcmd;
 }
 
 /**
@@ -356,6 +362,11 @@ udp_shmem_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
 
+	if (usk->state != SHMEM_UDP_STATE_INIT) {
+		/* Do not allow connected or already listened sockets */
+		errno = EINVAL;
+		return -1;
+	}
 	usk->state = SHMEM_UDP_STATE_LISTEN;
 #ifndef THREAD_SAFE
 	pthread_mutex_init (&usk->common.listen_sock.acept_lock, NULL);
@@ -405,9 +416,15 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 				(nsk->cookie_local + cmd->cmd.payload.cookie + 1)) << 2) + cmd->cmd.payload.cookie;
 		lcmd.cmd = SHMEM_UDP_CMD_CONNECT_ACK;
 		lcmd.payload.cookie = nsk->cookie_local;
+
+		memcpy (addr, &cmd->sin, MIN (sizeof (cmd->sin), *addrlen));
+		*addrlen = sizeof (cmd->sin);
+
 		if (sendto (nsk->fd, &lcmd, sizeof (lcmd), 0, (struct sockaddr *)&cmd->sin, sizeof (cmd->sin)) == -1) {
+			serrno = errno;
 			close (nsk->fd);
 			free (nsk);
+			errno = serrno;
 			return NULL;
 		}
 
@@ -436,7 +453,44 @@ int
 udp_shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
-	return connect (sk->fd, addr, addrlen);
+	struct ltproto_udp_command lcmd;
+	struct ltproto_udp_command_entry *cmd;
+	int serrno;
+
+	if (usk->state != SHMEM_UDP_STATE_INIT) {
+		/* Do not allow connected or already listened sockets */
+		errno = EINVAL;
+		return -1;
+	}
+	lcmd.cmd = SHMEM_UDP_CMD_CONNECT;
+	lcmd.payload.cookie = usk->cookie_local;
+
+	if (sendto (usk->fd, &lcmd, sizeof (lcmd), 0, addr, addrlen) == -1) {
+		return -1;
+	}
+	/* Wait for ACK */
+	usk->state = SHMEM_UDP_STATE_CONNECTED;
+	cmd = udp_shmem_expect_command (usk, SHMEM_UDP_CMD_CONNECT_ACK, &serrno);
+	if (cmd != NULL) {
+			/* We have initial syn packet, so we can setup socket */
+#ifndef THREAD_UNSAFE
+			pthread_mutex_lock (&usk->inq_lock);
+#endif
+			TAILQ_REMOVE (&usk->in_q, cmd, link);
+#ifndef THREAD_UNSAFE
+			pthread_mutex_unlock (&usk->inq_lock);
+#endif
+			/* Make connection cookie */
+			usk->conn_cookie = (((long)(usk->cookie_local + cmd->cmd.payload.cookie) *
+					(usk->cookie_local + cmd->cmd.payload.cookie + 1)) << 2) + cmd->cmd.payload.cookie;
+	}
+	else {
+		usk->state = SHMEM_UDP_STATE_INIT;
+		errno = serrno;
+		return -1;
+	}
+
+	return 0;
 }
 
 ssize_t

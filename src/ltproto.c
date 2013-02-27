@@ -43,6 +43,10 @@ find_sk (struct ltproto_ctx *ctx, int fd)
 {
 	struct ltproto_socket *sk;
 
+	if (fd < 0) {
+		return NULL;
+	}
+
 	if (fd < SK_ARRAY_BUCKETS) {
 		return lt_ptr_atomic_get (&ctx->sockets_ar[fd]);
 	}
