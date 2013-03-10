@@ -24,25 +24,26 @@
 #include "config.h"
 #include "ltproto.h"
 #include "ltproto_internal.h"
+#include <assert.h>
 
 /**
  * @file null.c
  * @section DESCRIPTION
  *
- * Fake module for ltopt that does nothing
+ * Test module for ltopt that just uses ordinary BSD sockets
  */
 
 int null_init_func (struct lt_module_ctx **ctx);
-int null_socket_func (struct lt_module_ctx *ctx);
-int null_setopts_func (struct lt_module_ctx *ctx, int sock, int optname, int optvalue);
-int null_bind_func (struct lt_module_ctx *ctx, int sock, const struct sockaddr *addr, socklen_t addrlen);
-int null_listen_func (struct lt_module_ctx *ctx, int sock, int backlog);
-int null_accept_func (struct lt_module_ctx *ctx, int sock, struct sockaddr *addr, socklen_t *addrlen);
-int null_connect_func (struct lt_module_ctx *ctx, int sock, const struct sockaddr *addr, socklen_t addrlen);
-ssize_t null_read_func (struct lt_module_ctx *ctx, int sock, void *buf, size_t len);
-ssize_t null_write_func (struct lt_module_ctx *ctx, int sock, const void *buf, size_t len);
-int null_select_func (struct lt_module_ctx *ctx, int sock, short what, const struct timeval *tv);
-int null_close_func (struct lt_module_ctx *ctx, int sock);
+struct ltproto_socket* null_socket_func (struct lt_module_ctx *ctx);
+int null_setopts_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue);
+int null_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
+int null_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog);
+struct ltproto_socket* null_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen);
+int null_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
+ssize_t null_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
+ssize_t null_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
+int null_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
+int null_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int null_destroy_func (struct lt_module_ctx *ctx);
 
 module_t null_module = {
@@ -71,62 +72,87 @@ null_init_func (struct lt_module_ctx **ctx)
 	return 0;
 }
 
-int
+struct ltproto_socket *
 null_socket_func (struct lt_module_ctx *ctx)
 {
-	return socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	struct ltproto_socket *sk;
+
+	sk = calloc (1, sizeof (struct ltproto_socket));
+	assert (sk != NULL);
+	sk->fd = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sk->fd == -1) {
+		free (sk);
+		return NULL;
+	}
+
+	return sk;
 }
 
 int
-null_setopts_func (struct lt_module_ctx *ctx, int sock, int optname, int optvalue)
+null_setopts_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue)
 {
-	return setsockopt (sock, SOL_SOCKET, optname, &optvalue, sizeof (optvalue));
+	return setsockopt (sk->fd, SOL_SOCKET, optname, &optvalue, sizeof (optvalue));
 }
 
 int
-null_bind_func (struct lt_module_ctx *ctx, int sock, const struct sockaddr *addr, socklen_t addrlen)
+null_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
-	return bind (sock, addr, addrlen);
+	int reuseaddr = 1;
+
+	setsockopt (sk->fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof (int));
+	return bind (sk->fd, addr, addrlen);
 }
 
 int
-null_listen_func (struct lt_module_ctx *ctx, int sock, int backlog)
+null_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog)
 {
-	return listen (sock, backlog);
+	return listen (sk->fd, backlog);
+}
+
+struct ltproto_socket *
+null_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen)
+{
+	struct ltproto_socket *nsk;
+	int afd;
+
+	afd = accept (sk->fd, addr, addrlen);
+	if (afd == -1) {
+		return NULL;
+	}
+
+	nsk = calloc (1, sizeof (struct ltproto_socket));
+	assert (nsk != NULL);
+	nsk->fd = afd;
+
+	return nsk;
 }
 
 int
-null_accept_func (struct lt_module_ctx *ctx, int sock, struct sockaddr *addr, socklen_t *addrlen)
+null_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
-	return accept (sock, addr, addrlen);
-}
-
-int
-null_connect_func (struct lt_module_ctx *ctx, int sock, const struct sockaddr *addr, socklen_t addrlen)
-{
-	return connect (sock, addr, addrlen);
+	return connect (sk->fd, addr, addrlen);
 }
 
 ssize_t
-null_read_func (struct lt_module_ctx *ctx, int sock, void *buf, size_t len)
+null_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len)
 {
-	return read (sock, buf, len);
+	return read (sk->fd, buf, len);
 }
 
 ssize_t
-null_write_func (struct lt_module_ctx *ctx, int sock, const void *buf, size_t len)
+null_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len)
 {
-	return write (sock, buf, len);
+	return write (sk->fd, buf, len);
 }
 
 int
-null_select_func (struct lt_module_ctx *ctx, int sock, short what, const struct timeval *tv)
+null_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv)
 {
 	struct pollfd pfd;
 	int msec = -1;
 
 	pfd.events = what;
-	pfd.fd = sock;
+	pfd.fd = sk->fd;
 
 	if (tv != NULL) {
 		msec = tv_to_msec (tv);
@@ -136,9 +162,9 @@ null_select_func (struct lt_module_ctx *ctx, int sock, short what, const struct 
 }
 
 int
-null_close_func (struct lt_module_ctx *ctx, int sock)
+null_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
-	return close (sock);
+	return close (sk->fd);
 }
 
 int

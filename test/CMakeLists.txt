@@ -1,0 +1,9 @@
+INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/src")
+
+SET(LTPROTO_TEST_SRC	test_main.c
+						test_utils.c)
+
+ADD_EXECUTABLE(ltproto_test ${LTPROTO_TEST_SRC})
+TARGET_LINK_LIBRARIES(ltproto_test ltproto)
+# For calculating log10
+TARGET_LINK_LIBRARIES(ltproto_test m)

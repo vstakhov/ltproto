@@ -26,8 +26,38 @@
 #include "ltproto.h"
 #include "ltproto_internal.h"
 #include <assert.h>
+#ifdef HAVE_OPENSSL
+#include <openssl/rand.h>
+#endif
 
 static struct ltproto_ctx *lib_ctx = NULL;
+
+/**
+ * Find a socket in socket array or hash
+ * @param ctx library context
+ * @param fd socket descriptor
+ * @return sk structure or NULL if this fd was not found
+ */
+static inline struct ltproto_socket*
+find_sk (struct ltproto_ctx *ctx, int fd)
+{
+	struct ltproto_socket *sk;
+
+	if (fd < 0) {
+		return NULL;
+	}
+
+	if (fd < SK_ARRAY_BUCKETS) {
+		return lt_ptr_atomic_get (&ctx->sockets_ar[fd]);
+	}
+	else {
+		SOCK_TABLE_RDLOCK (ctx);
+		HASH_FIND_INT (ctx->sockets_hash, &fd, sk);
+		SOCK_TABLE_UNLOCK (ctx);
+	}
+
+	return sk;
+}
 
 /**
  * Init ltproto library
@@ -40,6 +70,24 @@ ltproto_init (void)
 
 	lib_ctx = calloc (1, sizeof (struct ltproto_ctx));
 	assert (lib_ctx != NULL);
+
+	lib_ctx->sockets_ar = calloc (SK_ARRAY_BUCKETS, sizeof (struct ltproto_socket *));
+	assert (lib_ctx->sockets_ar != NULL);
+
+	/* Init pseudo-random generator using openssl if possible */
+#ifdef HAVE_OPENSSL
+	int seed;
+	if (access ("/dev/random", R_OK) != -1) {
+		RAND_load_file ("/dev/urandom", 256);
+	}
+	if (RAND_bytes ((char *)&seed, sizeof (seed)) != 1) {
+		seed = time (NULL);
+	}
+	srand (seed);
+#else
+	/* Unsafe way */
+	srand (time (NULL));
+#endif
 
 #ifndef THREAD_UNSAFE
 	pthread_rwlock_init (&lib_ctx->sock_lock, NULL);
@@ -98,7 +146,6 @@ ltproto_select_module (const char *module)
 int
 ltproto_socket (void *module)
 {
-	int nsock;
 	struct ltproto_module *mod;
 	struct ltproto_socket *sk;
 
@@ -110,18 +157,28 @@ ltproto_socket (void *module)
 		mod = lib_ctx->default_mod;
 	}
 	assert (mod != NULL);
-	nsock = mod->mod->module_socket_func (mod->ctx);
-	if (nsock != -1) {
-		sk = calloc (1, sizeof (struct ltproto_socket));
-		assert (sk != NULL);
-		sk->fd = nsock;
+	sk = mod->mod->module_socket_func (mod->ctx);
+	if (sk != NULL) {
+		if (find_sk (lib_ctx, sk->fd) != NULL) {
+			/* Duplicate socket, internal error */
+			errno = EINVAL;
+			return -1;
+		}
 		sk->mod = mod;
-		SOCK_TABLE_WRLOCK (lib_ctx);
-		HASH_ADD_INT (lib_ctx->sockets, fd, sk);
-		SOCK_TABLE_UNLOCK (lib_ctx);
+		if (sk->fd < SK_ARRAY_BUCKETS) {
+			lt_ptr_atomic_set (&lib_ctx->sockets_ar[sk->fd], sk);
+		}
+		else {
+			SOCK_TABLE_WRLOCK (lib_ctx);
+			HASH_ADD_INT (lib_ctx->sockets_hash, fd, sk);
+			SOCK_TABLE_UNLOCK (lib_ctx);
+		}
+	}
+	else {
+		return -1;
 	}
 
-	return nsock;
+	return sk->fd;
 }
 
 /**
@@ -137,12 +194,10 @@ ltproto_setsockopt (int sock, int optname, int optvalue)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_setopts_func (sk->mod->ctx, sock, optname, optvalue);
+		return sk->mod->mod->module_setopts_func (sk->mod->ctx, sk, optname, optvalue);
 	}
 
 	errno = -EBADF;
@@ -162,12 +217,10 @@ ltproto_bind (int sock, const struct sockaddr *addr, socklen_t addrlen)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_bind_func (sk->mod->ctx, sock, addr, addrlen);
+		return sk->mod->mod->module_bind_func (sk->mod->ctx, sk, addr, addrlen);
 	}
 
 	errno = -EBADF;
@@ -186,12 +239,10 @@ ltproto_listen (int sock, int backlog)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_listen_func (sk->mod->ctx, sock, backlog);
+		return sk->mod->mod->module_listen_func (sk->mod->ctx, sk, backlog);
 	}
 
 	errno = -EBADF;
@@ -208,15 +259,34 @@ ltproto_listen (int sock, int backlog)
 int
 ltproto_accept (int sock, struct sockaddr *addr, socklen_t *addrlen)
 {
-	struct ltproto_socket *sk;
+	struct ltproto_socket *sk, *ask;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_accept_func (sk->mod->ctx, sock, addr, addrlen);
+		ask = sk->mod->mod->module_accept_func (sk->mod->ctx, sk, addr, addrlen);
+		if (ask != NULL) {
+			if (find_sk (lib_ctx, ask->fd) != NULL) {
+				/* Duplicate socket, internal error */
+				errno = EINVAL;
+				return -1;
+			}
+			ask->mod = sk->mod;
+			if (ask->fd < SK_ARRAY_BUCKETS) {
+				lt_ptr_atomic_set (&lib_ctx->sockets_ar[ask->fd], ask);
+			}
+			else {
+				SOCK_TABLE_WRLOCK (lib_ctx);
+				HASH_ADD_INT (lib_ctx->sockets_hash, fd, ask);
+				SOCK_TABLE_UNLOCK (lib_ctx);
+			}
+		}
+		else {
+			errno = EINVAL;
+			return -1;
+		}
+		return ask->fd;
 	}
 
 	errno = -EBADF;
@@ -236,12 +306,10 @@ ltproto_connect (int sock, const struct sockaddr *addr, socklen_t addrlen)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_bind_func (sk->mod->ctx, sock, addr, addrlen);
+		return sk->mod->mod->module_connect_func (sk->mod->ctx, sk, addr, addrlen);
 	}
 
 	errno = -EBADF;
@@ -261,12 +329,10 @@ ltproto_read (int sock, void *buf, size_t len)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_read_func (sk->mod->ctx, sock, buf, len);
+		return sk->mod->mod->module_read_func (sk->mod->ctx, sk, buf, len);
 	}
 
 	errno = -EBADF;
@@ -286,12 +352,10 @@ ltproto_write (int sock, const void *buf, size_t len)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_write_func (sk->mod->ctx, sock, buf, len);
+		return sk->mod->mod->module_write_func (sk->mod->ctx, sk, buf, len);
 	}
 
 	errno = -EBADF;
@@ -310,16 +374,19 @@ ltproto_close (int sock)
 	int ret;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		ret = sk->mod->mod->module_close_func (sk->mod->ctx, sock);
+		ret = sk->mod->mod->module_close_func (sk->mod->ctx, sk);
 		if (ret != -1) {
-			SOCK_TABLE_WRLOCK (lib_ctx);
-			HASH_DEL (lib_ctx->sockets, sk);
-			SOCK_TABLE_UNLOCK (lib_ctx);
+			if (sock < SK_ARRAY_BUCKETS) {
+				lt_ptr_atomic_set (&lib_ctx->sockets_ar[sock], NULL);
+			}
+			else {
+				SOCK_TABLE_WRLOCK (lib_ctx);
+				HASH_DEL (lib_ctx->sockets_hash, sk);
+				SOCK_TABLE_UNLOCK (lib_ctx);
+			}
 			free (sk);
 		}
 		return ret;
@@ -342,12 +409,10 @@ ltproto_select (int sock, short what, const struct timeval *tv)
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
-	SOCK_TABLE_RDLOCK (lib_ctx);
-	HASH_FIND_INT (lib_ctx->sockets, &sock, sk);
-	SOCK_TABLE_UNLOCK (lib_ctx);
+	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
-		return sk->mod->mod->module_select_func (sk->mod->ctx, sock, what, tv);
+		return sk->mod->mod->module_select_func (sk->mod->ctx, sk, what, tv);
 	}
 
 	errno = -EBADF;
@@ -364,9 +429,16 @@ ltproto_destroy (void)
 	struct ltproto_socket *sk, *sk_tmp;
 
 	/* Close all sockets */
-	HASH_ITER (hh, lib_ctx->sockets, sk, sk_tmp) {
-		sk->mod->mod->module_close_func (sk->mod->ctx, sk->fd);
-		HASH_DEL (lib_ctx->sockets, sk);
+	for (i = 0; i < SK_ARRAY_BUCKETS; i ++) {
+		if (lib_ctx->sockets_ar[i] != NULL) {
+			sk = lib_ctx->sockets_ar[i];
+			sk->mod->mod->module_close_func (sk->mod->ctx, sk);
+			free (sk);
+		}
+	}
+	HASH_ITER (hh, lib_ctx->sockets_hash, sk, sk_tmp) {
+		sk->mod->mod->module_close_func (sk->mod->ctx, sk);
+		HASH_DEL (lib_ctx->sockets_hash, sk);
 		free (sk);
 	}
 
