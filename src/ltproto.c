@@ -411,6 +411,7 @@ ltproto_destroy (void)
 {
 	struct ltproto_module *mod, *mod_tmp;
 	struct ltproto_socket *sk, *sk_tmp;
+	int i;
 
 	/* Close all sockets */
 	for (i = 0; i < SK_ARRAY_BUCKETS; i ++) {
