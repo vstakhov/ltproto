@@ -409,7 +409,7 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 			return NULL;
 		}
 		nsk->common.data_sock.parent = usk;
-		nsk->cookie_local = rand ();
+		nsk->cookie_local =  get_random_int (ctx->lib_ctx->prng);
 
 		/* Make connection cookie */
 		nsk->conn_cookie = (((long)(nsk->cookie_local + cmd->cmd.payload.cookie) *

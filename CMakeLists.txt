@@ -27,7 +27,7 @@ MACRO(AddModules MLIST)
     STRING(RANDOM LENGTH 8 _MODULES_ID)
     SET(MODULES_ID ${_MODULES_ID} CACHE INTERNAL "Modules ID" FORCE)
     FILE(WRITE "${CMAKE_BINARY_DIR}/src/modules.c" "/* ${MODULES_ID} */\n#include \"config.h\"\n")
-    
+    FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "#include \"ltproto_internal.h\"\n")
     # Handle even old cmake
     LIST(LENGTH ${MLIST} MLIST_COUNT)
     MATH(EXPR MLIST_MAX ${MLIST_COUNT}-1)
@@ -58,11 +58,11 @@ MACRO(AddAllocators ALIST)
         FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "extern allocator_t ${ALLOC}_allocator;\n")
     ENDFOREACH(AL_IDX RANGE ${ALIST_MAX})
          
-    FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "\n\allocator_t *allocators[] = {\n")
+    FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "\n\nallocator_t *allocators[] = {\n")
     
     FOREACH(AL_IDX RANGE ${ALIST_MAX})
         LIST(GET ${ALIST} ${AL_IDX} ALLOC)
-        FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "&${ALLOC}_module,\n")
+        FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "&${ALLOC}_allocator,\n")
     ENDFOREACH(AL_IDX RANGE ${ALIST_MAX})
     
     FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "NULL\n};\n")
@@ -223,9 +223,14 @@ INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/src")
 SET(LTPROTO_SRC src/ltproto.c src/util.c ${CMAKE_BINARY_DIR}/src/modules.c)
 SET(MODULES_SRC src/null.c src/udp_shmem.c)
 SET(MODULES_LIST null udp_shmem)
-AddModules(MODULES_LIST)
 
-ADD_LIBRARY(ltproto SHARED ${LTPROTO_SRC} ${MODULES_SRC})
+SET(ALLOCATORS_SRC src/alloc_linear.c)
+SET(ALLOCATORS_LIST linear)
+
+AddModules(MODULES_LIST)
+AddAllocators(ALLOCATORS_LIST)
+
+ADD_LIBRARY(ltproto SHARED ${LTPROTO_SRC} ${MODULES_SRC} ${ALLOCATORS_SRC})
 IF(HAVE_LIBRT)
 	TARGET_LINK_LIBRARIES(ltproto rt)
 ENDIF(HAVE_LIBRT)

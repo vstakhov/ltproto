@@ -33,6 +33,7 @@
 
 /**
  * Initialise pseudo random generator
+ * @return opaque data pointer that must be freed by caller
  */
 void* init_prng (void);
 
@@ -41,5 +42,12 @@ void* init_prng (void);
  * @return pseudo random number
  */
 int64_t get_random_seq (void *data);
+
+/**
+ * Create new pseudo random int
+ * @param data opaque data pointer
+ * @return
+ */
+int get_random_int (void *data);
 
 #endif /* UTIL_H_ */

@@ -91,12 +91,39 @@ get_random_seq (void *data)
 # endif
 #elif defined(HAVE_SETSRANDOM_R)
 	/* Compose of two random integers */
-	int32_t *p = (int32_t *)&res;
 	random_r (data, p++);
 	random_r (data, p);
 #else
 	/* Compose of two random integers */
 	*p++ = rand ();
+	*p = rand();
+#endif
+	return res;
+}
+
+
+/**
+ * Create new 64 bit pseudo-random number
+ * @return pseudo random number
+ */
+int
+get_random_int (void *data)
+{
+	int res;
+	int *p = (int *)&res;
+
+	/* Select the best generator available */
+#ifdef HAVE_ARC4RAND
+# ifndef THREAD_UNSAFE
+	pthread_mutex_lock (data);
+# endif
+	arc4random_buf (p, sizeof (res));
+# ifndef THREAD_UNSAFE
+	pthread_mutex_unlock (data);
+# endif
+#elif defined(HAVE_SETSRANDOM_R)
+	random_r (data, p);
+#else
 	*p = rand();
 #endif
 	return res;

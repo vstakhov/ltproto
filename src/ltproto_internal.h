@@ -88,12 +88,59 @@
   }))
 #endif
 
+
+/**
+ * Forwarded declarations
+ */
+struct ltproto_ctx;
+struct lt_module_ctx;
+struct ltproto_socket;
+
+struct lt_allocator_ctx;
+struct lt_alloc_tag;
+
+/**
+ * Common ltproto module
+ */
+typedef struct module_s {
+    char *name;
+    int priority;
+    int (*module_init_func)(struct lt_module_ctx **ctx);
+    struct ltproto_socket * (*module_socket_func)(struct lt_module_ctx *ctx);
+    int (*module_setopts_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue);
+    int (*module_bind_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
+    int (*module_listen_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog);
+    struct ltproto_socket * (*module_accept_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen);
+    int (*module_connect_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
+    ssize_t (*module_read_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
+    ssize_t (*module_write_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
+    /** TODO: add iovector functions as well */
+    int (*module_select_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
+    int (*module_close_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk);
+    int (*module_destroy_func)(struct lt_module_ctx *ctx);
+} module_t;
+
+/**
+ * Common ltproto allocator
+ */
+typedef struct allocator_s {
+	char *name;
+	int priority;
+	int (*allocator_init_func)(struct lt_allocator_ctx **ctx, uint64_t init_seq);
+	void * (*allocator_alloc_func)(struct lt_allocator_ctx *ctx, size_t size);
+	struct lt_alloc_tag * (*allocator_gettag_func)(struct lt_allocator_ctx *ctx, void *ptr);
+	void * (*allocator_attachtag_func)(struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag);
+	void (*allocator_free_func)(struct lt_allocator_ctx *ctx, void *addr, size_t size);
+} allocator_t;
+
 /**
  * Abstract allocator ctx
  */
 struct lt_allocator_ctx {
 	size_t len;
 	size_t bytes_allocated;
+	uint64_t seq;
+	struct ltproto_ctx *lib_ctx;	// Parent ctx
 };
 
 /**
@@ -108,7 +155,8 @@ struct lt_alloc_tag {
  * Asbtract module ctx
  */
 struct lt_module_ctx {
-	size_t len;					// Length of the context
+	size_t len;						// Length of the context
+	struct ltproto_ctx *lib_ctx;	// Parent ctx
 };
 
 /**

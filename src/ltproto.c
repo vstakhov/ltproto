@@ -83,6 +83,7 @@ ltproto_init (void)
 			mod = calloc (1, sizeof (struct ltproto_module));
 			assert (mod != NULL);
 			modules[i]->module_init_func (&mod->ctx);
+			mod->ctx->lib_ctx = lib_ctx;
 			mod->mod = modules[i];
 			mod->name = modules[i]->name;
 			MOD_TABLE_WRLOCK (lib_ctx);
