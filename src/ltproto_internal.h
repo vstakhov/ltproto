@@ -26,6 +26,7 @@
 
 #include "config.h"
 #include "uthash.h"
+#include "util.h"
 
 /**
  * @file ltproto_internal.h
@@ -88,6 +89,22 @@
 #endif
 
 /**
+ * Abstract allocator ctx
+ */
+struct lt_allocator_ctx {
+	size_t len;
+	size_t bytes_allocated;
+};
+
+/**
+ * Unique identifier of memory region
+ */
+struct lt_alloc_tag {
+	uint64_t seq;				// Constantly growing sequence
+	uint64_t id;				// Unique ID
+};
+
+/**
  * Asbtract module ctx
  */
 struct lt_module_ctx {
@@ -118,6 +135,7 @@ struct ltproto_socket {
  * Ltproto main context
  */
 struct ltproto_ctx {
+	void *prng;							// Prng specific data
 	struct ltproto_module *modules;		// Available modules
 	struct ltproto_socket *sockets_hash; // Sockets table
 	struct ltproto_socket **sockets_ar;	// Array of sockets

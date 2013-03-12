@@ -43,6 +43,7 @@
  * SOCK_STREAM sockets at the moment.
  */
 
+
 /**
  * Init ltproto library
  */
@@ -116,6 +117,22 @@ int ltproto_connect (int sock, const struct sockaddr *addr, socklen_t addrlen);
 int ltproto_read (int sock, void *buf, size_t len);
 
 /**
+ * Get buffer without copying
+ * @param sock socket descriptor
+ * @param len read up to len bytes
+ * @return pointer to a buffer
+ */
+void* ltproto_read_zero (int sock, size_t len);
+
+/**
+ * Release read buffer for desired address
+ * @param sock socket descriptor
+ * @param address address to be released
+ * @return 0 or -1 in case of error
+ */
+int ltproto_read_release (int sock, void *address);
+
+/**
  * Write data to a socket
  * @param sock socket descriptor
  * @param buf buffer pointer
@@ -123,6 +140,23 @@ int ltproto_read (int sock, void *buf, size_t len);
  * @return number of bytes written or -1 in case of error
  */
 int ltproto_write (int sock, const void *buf, size_t len);
+
+/**
+ * Get write buffer for zero-copy writing
+ * @param sock socket descriptor
+ * @param len length of write buffer required
+ */
+void* ltproto_get_write_buf (int sock, size_t len);
+
+/**
+ * Write buffer in zero-copy mode
+ * @param sock socket descriptor
+ * @param buf buffer that should be transferred
+ * @param len length of buffer
+ * @return len or -1 in case of error
+ */
+int ltproto_write_zero (int sock, void *buf, size_t len);
+
 
 /**
  * Close a socket

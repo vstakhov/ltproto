@@ -48,6 +48,26 @@ MACRO(AddModules MLIST)
     
 ENDMACRO(AddModules MLIST)
 
+MACRO(AddAllocators ALIST)
+# Handle even old cmake
+    LIST(LENGTH ${ALIST} ALIST_COUNT)
+    MATH(EXPR ALIST_MAX ${ALIST_COUNT}-1)
+    
+    FOREACH(AL_IDX RANGE ${ALIST_MAX})
+        LIST(GET ${ALIST} ${AL_IDX} ALLOC)
+        FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "extern allocator_t ${ALLOC}_allocator;\n")
+    ENDFOREACH(AL_IDX RANGE ${ALIST_MAX})
+         
+    FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "\n\allocator_t *allocators[] = {\n")
+    
+    FOREACH(AL_IDX RANGE ${ALIST_MAX})
+        LIST(GET ${ALIST} ${AL_IDX} ALLOC)
+        FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "&${ALLOC}_module,\n")
+    ENDFOREACH(AL_IDX RANGE ${ALIST_MAX})
+    
+    FILE(APPEND "${CMAKE_BINARY_DIR}/src/modules.c" "NULL\n};\n")
+ENDMACRO(AddAllocators ALIST)
+
 IF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_GNU_SOURCE -DLINUX")
 ENDIF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -184,6 +204,9 @@ IF(HAVE_SCHED_H)
 	CHECK_SYMBOL_EXISTS(sched_setaffinity sched.h HAVE_SCHED_SETAFFINITY)
 ENDIF(HAVE_SCHED_H)
 
+CHECK_SYMBOL_EXISTS(srandom_r stdlib.h HAVE_SRANDOM_R)
+CHECK_SYMBOL_EXISTS(arc4random stdlib.h HAVE_ARC4RAND)
+
 FIND_LIBRARY(HAVE_LIBRT rt)
 
 IF(ENABLE_THREAD_UNSAFE MATCHES "ON")
@@ -197,7 +220,7 @@ ENDIF(ENABLE_THREAD_UNSAFE MATCHES "ON")
 CONFIGURE_FILE(config.h.in src/config.h)
 INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/src")
 
-SET(LTPROTO_SRC src/ltproto.c ${CMAKE_BINARY_DIR}/src/modules.c)
+SET(LTPROTO_SRC src/ltproto.c src/util.c ${CMAKE_BINARY_DIR}/src/modules.c)
 SET(MODULES_SRC src/null.c src/udp_shmem.c)
 SET(MODULES_LIST null udp_shmem)
 AddModules(MODULES_LIST)
