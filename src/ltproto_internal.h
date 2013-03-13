@@ -194,7 +194,4 @@ struct ltproto_ctx {
 #endif
 };
 
-#define msec_to_tv(msec, tv) do { (tv)->tv_sec = (msec) / 1000; (tv)->tv_usec = ((msec) - (tv)->tv_sec * 1000) * 1000; } while(0)
-#define tv_to_msec(tv) (tv)->tv_sec * 1000 + (tv)->tv_usec / 1000
-
 #endif /* LTPROTO_INTERNAL_H_ */

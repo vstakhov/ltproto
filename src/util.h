@@ -50,4 +50,13 @@ int64_t get_random_seq (void *data);
  */
 int get_random_int (void *data);
 
+#define MEM_ALIGNMENT   sizeof(unsigned long)    /* platform word */
+#define align_ptr(p, a)                                                   \
+    (u_char *) (((uintptr_t) (p) + ((uintptr_t) a - 1)) & ~((uintptr_t) a - 1))
+#define align_ptr_platform(p)                                                   \
+    (u_char *) (((uintptr_t) (p) + ((uintptr_t) MEM_ALIGNMENT - 1)) & ~((uintptr_t) MEM_ALIGNMENT - 1))
+
+#define msec_to_tv(msec, tv) do { (tv)->tv_sec = (msec) / 1000; (tv)->tv_usec = ((msec) - (tv)->tv_sec * 1000) * 1000; } while(0)
+#define tv_to_msec(tv) (tv)->tv_sec * 1000 + (tv)->tv_usec / 1000
+
 #endif /* UTIL_H_ */

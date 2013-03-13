@@ -93,6 +93,7 @@
 
 #cmakedefine HAVE_SRANDOM_R		1
 #cmakedefine HAVE_ARC4RAND		1
+#cmakedefine HAVE_HUGETLB		1
 
 /* sys/types */
 #ifdef HAVE_SYS_TYPES_H
