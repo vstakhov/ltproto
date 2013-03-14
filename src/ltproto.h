@@ -179,4 +179,20 @@ int ltproto_select (int sock, short what, const struct timeval *tv);
  */
 void ltproto_destroy (void);
 
+/**
+ * Utility functions
+ */
+/**
+ * Allocate chunk from ltproto allocator
+ * @param size size of chunk
+ */
+void* ltproto_alloc (size_t size);
+
+/**
+ * Free chunk allocated by ltproto
+ * @param size size of chunk
+ * @param ptr pointer to chunk
+ */
+void ltproto_free (size_t size, void *ptr);
+
 #endif /* LTPROTO_H_ */

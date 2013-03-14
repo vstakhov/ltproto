@@ -64,6 +64,7 @@ ltproto_init (void)
 {
 	int i, max_priority = INT_MIN;
 	struct ltproto_module *mod;
+	allocator_t *alloc = NULL;
 
 	lib_ctx = calloc (1, sizeof (struct ltproto_ctx));
 	assert (lib_ctx != NULL);
@@ -98,6 +99,23 @@ ltproto_init (void)
 			break;
 		}
 	}
+
+	max_priority = INT_MIN;
+	for (i = 0;; i++) {
+		if (allocators[i] != NULL) {
+			if (allocators[i]->priority > max_priority) {
+				alloc = allocators[i];
+				max_priority = allocators[i]->priority;
+			}
+		}
+		else {
+			break;
+		}
+	}
+
+	assert (alloc != NULL);
+	lib_ctx->allocator = alloc;
+	assert (lib_ctx->allocator->allocator_init_func (&lib_ctx->alloc_ctx, get_random_seq (lib_ctx->prng)) != -1);
 
 	/* Do we have any modules defined ? */
 	assert (lib_ctx->default_mod != NULL);
@@ -438,6 +456,30 @@ ltproto_destroy (void)
 	if (lib_ctx->prng) {
 		free (lib_ctx->prng);
 	}
-
+	lib_ctx->allocator->allocator_destroy_func (lib_ctx->alloc_ctx);
 	free (lib_ctx);
+}
+
+/**
+ * Allocate chunk from ltproto allocator
+ * @param size size of chunk
+ */
+void*
+ltproto_alloc (size_t size)
+{
+	assert (size != 0);
+
+	return lib_ctx->allocator->allocator_alloc_func (lib_ctx->alloc_ctx, size);
+}
+
+/**
+ * Free chunk allocated by ltproto
+ * @param size size of chunk
+ * @param ptr pointer to chunk
+ */
+void
+ltproto_free (size_t size, void *ptr)
+{
+	assert (ptr != 0);
+	lib_ctx->allocator->allocator_free_func (lib_ctx->alloc_ctx, ptr, size);
 }

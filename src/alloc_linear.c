@@ -43,6 +43,7 @@ void * linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size);
 struct lt_alloc_tag * linear_gettag_func (struct lt_allocator_ctx *ctx, void *ptr);
 void * linear_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag);
 void linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size);
+void linear_destroy_func (struct lt_allocator_ctx *ctx);
 
 struct alloc_chunk;
 
@@ -84,7 +85,8 @@ allocator_t linear_allocator = {
 	.allocator_alloc_func = linear_alloc_func,
 	.allocator_gettag_func = linear_gettag_func,
 	.allocator_attachtag_func = linear_attachtag_func,
-	.allocator_free_func = linear_free_func
+	.allocator_free_func = linear_free_func,
+	.allocator_destroy_func = linear_destroy_func
 };
 
 /**
@@ -114,7 +116,7 @@ create_shared_arena (struct lt_linear_allocator_ctx *ctx, size_t size)
 		return -1;
 	}
 #ifdef HAVE_HUGETLB
-	flags = MAP_SHARED | MAP_HUGETLB;
+	flags = MAP_SHARED;
 #else
 	flags = MAP_SHARED;
 #endif
@@ -438,4 +440,24 @@ linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size)
 	/* Insert element to expire queue */
 	real_ctx->free_chunks[sel].chunk = chunk;
 	real_ctx->free_chunks[sel].arena = ar;
+}
+
+
+void
+linear_destroy_func (struct lt_allocator_ctx *ctx)
+{
+	struct alloc_chunk *chunk, *tmp_chunk;
+	struct alloc_arena *ar, *tmp_ar;
+	struct lt_linear_allocator_ctx *real_ctx = (struct lt_linear_allocator_ctx *)ctx;
+
+	/* Free all arenas and chunks */
+	TAILQ_FOREACH_SAFE (ar, &real_ctx->arenas, link, tmp_ar) {
+		munmap ((void *)ar->begin, ar->len);
+		TAILQ_FOREACH_SAFE (chunk, &ar->chunks, link, tmp_chunk) {
+			free (chunk);
+		}
+		free (ar);
+	}
+
+	free (ctx);
 }

@@ -131,6 +131,7 @@ typedef struct allocator_s {
 	struct lt_alloc_tag * (*allocator_gettag_func)(struct lt_allocator_ctx *ctx, void *ptr);
 	void * (*allocator_attachtag_func)(struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag);
 	void (*allocator_free_func)(struct lt_allocator_ctx *ctx, void *addr, size_t size);
+	void (*allocator_destroy_func)(struct lt_allocator_ctx *ctx);
 } allocator_t;
 
 /**
@@ -188,6 +189,8 @@ struct ltproto_ctx {
 	struct ltproto_socket *sockets_hash; // Sockets table
 	struct ltproto_socket **sockets_ar;	// Array of sockets
 	struct ltproto_module *default_mod;	// Default module used for ltproto sockets
+	allocator_t *allocator;
+	struct lt_allocator_ctx *alloc_ctx;	// Allocator context
 #ifndef THREAD_UNSAFE
 	pthread_rwlock_t sock_lock;			// Lock for sockets table
 	pthread_rwlock_t mod_lock;			// Lock for modules table
