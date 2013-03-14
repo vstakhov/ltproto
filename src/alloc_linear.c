@@ -36,7 +36,7 @@
 /* How much pages are in an arena by default */
 const unsigned int default_arena_pages = 512;
 /* How much elements can we allow in reused chunks queue */
-#define REUSED_QUEUE_MAX 20
+#define REUSED_QUEUE_MAX 16
 
 int linear_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq);
 void * linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size);
@@ -54,6 +54,7 @@ struct alloc_arena {
 	uintptr_t pos;						// Position of free space pointer
 	uintptr_t last;						// Last byte of arena
 	size_t free;						// Free space
+	struct alloc_chunk *last_chunk;		// Last chunk created
 	TAILQ_HEAD (chunk_head, alloc_chunk) chunks;	// Allocated chunks
 	TAILQ_ENTRY (alloc_arena) link;
 };
@@ -75,6 +76,7 @@ struct lt_linear_allocator_ctx {
 		struct alloc_arena *arena;
 	} free_chunks [REUSED_QUEUE_MAX];	// Free chunks that can be reused
 	unsigned int free_chunks_cnt;		// Amount of chunks if free chunk queue
+	unsigned int last_free;
 };
 
 
@@ -150,7 +152,7 @@ create_shared_arena (struct lt_linear_allocator_ctx *ctx, size_t size)
 
 
 static inline struct alloc_chunk*
-create_chunk (uintptr_t begin, size_t size)
+create_chunk (uintptr_t begin, size_t size, struct alloc_arena *ar, struct alloc_chunk *pos, int insert_pre)
 {
 	struct alloc_chunk *chunk;
 
@@ -158,6 +160,24 @@ create_chunk (uintptr_t begin, size_t size)
 	assert (chunk != NULL);
 	chunk->base = begin;
 	chunk->len = size;
+
+	if (insert_pre) {
+		if (pos) {
+			TAILQ_INSERT_BEFORE (pos, chunk, link);
+		}
+		else {
+			TAILQ_INSERT_HEAD (&ar->chunks, chunk, link);
+		}
+	}
+	else {
+		if (pos) {
+			TAILQ_INSERT_AFTER (&ar->chunks, pos, chunk, link);
+		}
+		else {
+			TAILQ_INSERT_TAIL (&ar->chunks, chunk, link);
+		}
+	}
+	ar->last_chunk = chunk;
 
 	return chunk;
 }
@@ -172,15 +192,16 @@ create_chunk (uintptr_t begin, size_t size)
 static struct alloc_chunk*
 arena_find_free_chunk (struct lt_linear_allocator_ctx *ctx, struct alloc_arena *ar, size_t size)
 {
-	struct alloc_chunk *chunk, *cur, *next;
+	struct alloc_chunk *chunk = NULL, *cur, *next;
 	uintptr_t start, end;
 
 	start = ar->pos;
 	end = ar->last;
 
-	if (end - start >= size) {
+	if (end - start > size) {
 		/* Trivial case */
-		chunk = create_chunk (start, size);
+		//printf("hui1: %p -> %p, %zd\n", start, end, size);
+		chunk = create_chunk (start, size, ar, ar->last_chunk, 0);
 		start = start + size;
 		start = align_ptr_platform (start);
 	}
@@ -188,8 +209,9 @@ arena_find_free_chunk (struct lt_linear_allocator_ctx *ctx, struct alloc_arena *
 		/* Check the space at the beginning */
 		start = align_ptr_platform (ar->begin);
 		end = TAILQ_FIRST (&ar->chunks)->base;
-		if (end - start >= size) {
-			chunk = create_chunk (start, size);
+		if (end - start > size) {
+			//printf("hui2: %p -> %p, %zd\n", start, end, size);
+			chunk = create_chunk (start, size, ar, TAILQ_FIRST (&ar->chunks), 1);
 			start = start + size;
 			start = align_ptr_platform (start);
 		}
@@ -209,17 +231,24 @@ arena_find_free_chunk (struct lt_linear_allocator_ctx *ctx, struct alloc_arena *
 					end = ar->begin + ar->len;
 				}
 				if (end - start >= size) {
-					chunk = create_chunk (start, size);
+					chunk = create_chunk (start, size, ar, cur, 0);
 					start = start + size;
 					start = align_ptr_platform (start);
+					//printf("hui3: %p -> %p, %zd\n", start, end, size);
 					break;
 				}
 			}
 		}
 	}
 	else {
-		/* Illegal case as zone is free, but has not enough space to alloc data requested */
-		assert (0);
+		/* Zone was free */
+		start = align_ptr_platform (ar->begin);
+		chunk = create_chunk (start, size, ar, NULL, 0);
+		start = start + size;
+		start = align_ptr_platform (start);
+		end = ar->begin + ar->len;
+		ar->free = ar->len;
+		//printf("hui4: %p -> %p, %zd\n", start, end, size);
 	}
 
 	ar->pos = start;
@@ -257,11 +286,13 @@ find_free_chunk (struct lt_linear_allocator_ctx *ctx, size_t size)
 	}
 	if (sel >= 0) {
 		/* We just reuse chunk without arena modifications */
+		tmp = ctx->free_chunks[sel].chunk;
+		//printf("REUSED CHUNK %p\n", tmp);
 		ctx->free_chunks_cnt --;
-		tmp = ctx->free_chunks[i].chunk;
 		for (i = sel; i < ctx->free_chunks_cnt; i ++) {
 			memcpy (&ctx->free_chunks[i], &ctx->free_chunks[i + 1], sizeof (ctx->free_chunks[0]));
 		}
+		memset (&ctx->free_chunks[i + 1], 0, sizeof (ctx->free_chunks[0]));
 
 		return tmp;
 	}
@@ -270,6 +301,9 @@ find_free_chunk (struct lt_linear_allocator_ctx *ctx, size_t size)
 	TAILQ_FOREACH_REVERSE (ar, &ctx->arenas, ar_head, link) {
 		if (ar->free >= size) {
 			cur = arena_find_free_chunk (ctx, ar, size);
+			if (cur) {
+				return cur;
+			}
 		}
 	}
 
@@ -285,7 +319,7 @@ find_free_chunk (struct lt_linear_allocator_ctx *ctx, size_t size)
  * @return desired chunk or NULL
  */
 static struct alloc_chunk*
-find_chunk_for_addr (struct lt_linear_allocator_ctx *ctx, uintptr_t addr, struct alloc_arena **arena)
+find_chunk_for_addr (struct lt_linear_allocator_ctx *ctx, uintptr_t addr, size_t len, struct alloc_arena **arena)
 {
 	struct alloc_arena *ar;
 	struct alloc_chunk *cur, *next, *prev;
@@ -296,22 +330,23 @@ find_chunk_for_addr (struct lt_linear_allocator_ctx *ctx, uintptr_t addr, struct
 		cur = ctx->free_chunks[i].chunk;
 		next = TAILQ_NEXT (cur, link);
 		prev = TAILQ_PREV (cur, chunk_head, link);
-		if (next && addr >= next->base && addr <= next->base + next->len) {
+		if (next && next->len == len && addr == next->base) {
 			*arena = ctx->free_chunks[i].arena;
 			return next;
 		}
-		if (prev && addr >= prev->base && addr <= prev->base + prev->len) {
+		if (prev && prev->len == len && addr == prev->base) {
 			*arena = ctx->free_chunks[i].arena;
 			return prev;
 		}
-		if (addr >= cur->base && addr <= cur->base + cur->len) {
+		if (cur->len == len && addr == cur->base) {
 			/* Address is in deleted list, that generally means double free corruption */
+			//printf ("!! ar: %p, chunk: %p, addr: %p, idx: %d\n", ctx->free_chunks[i].arena, cur, addr, i);
 			assert (0);
 		}
 	}
 
 	TAILQ_FOREACH_REVERSE (ar, &ctx->arenas, ar_head, link) {
-		if (addr >= ar->begin && addr <= ar->begin + ar->len) {
+		if (addr >= ar->begin && addr < ar->begin + ar->len) {
 			goto ar_found;
 		}
 	}
@@ -321,7 +356,7 @@ find_chunk_for_addr (struct lt_linear_allocator_ctx *ctx, uintptr_t addr, struct
 ar_found:
 	/* XXX: naive and slow algorithm */
 	TAILQ_FOREACH (cur, &ar->chunks, link) {
-		if (addr >= cur->base && addr <= cur->base + cur->len) {
+		if (addr == cur->base) {
 			*arena = ar;
 			return cur;
 		}
@@ -396,7 +431,7 @@ linear_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag)
 void
 linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size)
 {
-	struct alloc_chunk *chunk, *chunk_exp;
+	struct alloc_chunk *chunk, *chunk_exp, *tmp;
 	struct alloc_arena *ar, *ar_exp;
 	struct lt_linear_allocator_ctx *real_ctx = (struct lt_linear_allocator_ctx *)ctx;
 	unsigned int i, max_free = 0;
@@ -404,40 +439,49 @@ linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size)
 
 	assert (addr != NULL);
 
-	chunk = find_chunk_for_addr (real_ctx, (uintptr_t)addr, &ar);
+	chunk = find_chunk_for_addr (real_ctx, (uintptr_t)addr, size, &ar);
+	//printf ("ar: %p, chunk: %p, addr: %p\n", ar, chunk, addr);
 
 	assert (chunk != NULL && ar != NULL);
 
 	/* Initially we need to push chunk to a free list */
 	if (real_ctx->free_chunks_cnt < REUSED_QUEUE_MAX) {
-		real_ctx->free_chunks_cnt ++;
 		real_ctx->free_chunks[real_ctx->free_chunks_cnt].chunk = chunk;
 		real_ctx->free_chunks[real_ctx->free_chunks_cnt].arena = ar;
+		real_ctx->free_chunks_cnt ++;
 		return;
 	}
 	/* We need to expire some chunks in wait queue */
-	for (i = 0; i < real_ctx->free_chunks_cnt; i ++) {
-		if (real_ctx->free_chunks[i].arena == ar) {
-			/* Prefer chunks from this arena */
-			sel = i;
-			break;
-		}
-		/* Otherwise expire chunk from the most free arena */
-		if (real_ctx->free_chunks[i].arena->free > max_free) {
-			sel = i;
-			max_free = real_ctx->free_chunks[i].arena->free;
-		}
-	}
-	assert (sel != -1);
+
+	sel = ++real_ctx->last_free % real_ctx->free_chunks_cnt;
 
 	/* Remove expired element completely */
 	ar_exp = real_ctx->free_chunks[sel].arena;
 	chunk_exp = real_ctx->free_chunks[sel].chunk;
 	TAILQ_REMOVE (&ar_exp->chunks, chunk_exp, link);
 	ar_exp->free += chunk_exp->len;
+	if ((tmp = TAILQ_PREV (chunk_exp, chunk_head, link)) != NULL) {
+		ar_exp->pos = tmp->base + tmp->len;
+		ar_exp->pos = align_ptr_platform (ar_exp->pos);
+		ar->last_chunk = TAILQ_PREV (chunk_exp, chunk_head, link);
+	}
+	else {
+		/* Already aligned */
+		ar_exp->pos = chunk_exp->base;
+		ar->last_chunk = NULL;
+	}
+
+	if ((tmp = TAILQ_NEXT (chunk_exp, link)) != NULL) {
+		ar_exp->last = tmp->base;
+	}
+	else {
+		ar_exp->last = chunk_exp->base + chunk_exp->len;
+	}
+
 	free (chunk_exp);
 
 	/* Insert element to expire queue */
+	//printf("chunk insert: %p, len: %zd, idx: %d\n", chunk, chunk->len, sel);
 	real_ctx->free_chunks[sel].chunk = chunk;
 	real_ctx->free_chunks[sel].arena = ar;
 }

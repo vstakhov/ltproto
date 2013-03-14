@@ -470,6 +470,7 @@ ltproto_alloc (size_t size)
 	assert (size != 0);
 
 	return lib_ctx->allocator->allocator_alloc_func (lib_ctx->alloc_ctx, size);
+	//return malloc(size);
 }
 
 /**
@@ -482,4 +483,5 @@ ltproto_free (size_t size, void *ptr)
 {
 	assert (ptr != 0);
 	lib_ctx->allocator->allocator_free_func (lib_ctx->alloc_ctx, ptr, size);
+	//free (ptr);
 }
