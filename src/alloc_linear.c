@@ -82,7 +82,7 @@ struct lt_linear_allocator_ctx {
 
 allocator_t linear_allocator = {
 	.name = "linear allocator",
-	.priority = 0,
+	.priority = 1,
 	.allocator_init_func = linear_init_func,
 	.allocator_alloc_func = linear_alloc_func,
 	.allocator_gettag_func = linear_gettag_func,
@@ -434,7 +434,6 @@ linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size)
 	struct alloc_chunk *chunk, *chunk_exp, *tmp;
 	struct alloc_arena *ar, *ar_exp;
 	struct lt_linear_allocator_ctx *real_ctx = (struct lt_linear_allocator_ctx *)ctx;
-	unsigned int i, max_free = 0;
 	int sel = -1;
 
 	assert (addr != NULL);
@@ -493,6 +492,7 @@ linear_destroy_func (struct lt_allocator_ctx *ctx)
 	struct alloc_chunk *chunk, *tmp_chunk;
 	struct alloc_arena *ar, *tmp_ar;
 	struct lt_linear_allocator_ctx *real_ctx = (struct lt_linear_allocator_ctx *)ctx;
+	char arena_name[64];
 
 	/* Free all arenas and chunks */
 	TAILQ_FOREACH_SAFE (ar, &real_ctx->arenas, link, tmp_ar) {
@@ -500,6 +500,8 @@ linear_destroy_func (struct lt_allocator_ctx *ctx)
 		TAILQ_FOREACH_SAFE (chunk, &ar->chunks, link, tmp_chunk) {
 			free (chunk);
 		}
+		snprintf (arena_name, sizeof (arena_name), "/lin_%lu", (long unsigned)ar->tag.seq);
+		shm_unlink (arena_name);
 		free (ar);
 	}
 

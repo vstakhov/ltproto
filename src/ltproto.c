@@ -470,7 +470,6 @@ ltproto_alloc (size_t size)
 	assert (size != 0);
 
 	return lib_ctx->allocator->allocator_alloc_func (lib_ctx->alloc_ctx, size);
-	//return malloc(size);
 }
 
 /**
@@ -483,5 +482,42 @@ ltproto_free (size_t size, void *ptr)
 {
 	assert (ptr != 0);
 	lib_ctx->allocator->allocator_free_func (lib_ctx->alloc_ctx, ptr, size);
-	//free (ptr);
+}
+
+/**
+ * Try to switch allocator to another one
+ * @param name name of allocator to switch to
+ * @return -1 in case of error or 0 otherwise
+ */
+int
+ltproto_switch_allocator (const char *name)
+{
+	allocator_t *alloc = NULL;
+	int i;
+
+	for (i = 0;; i++) {
+		if (allocators[i] != NULL) {
+			if (strcmp (allocators[i]->name, name) == 0) {
+				alloc = allocators[i];
+				break;
+			}
+		}
+		else {
+			break;
+		}
+	}
+
+	if (alloc == NULL) {
+		errno = ENOENT;
+		return -1;
+	}
+
+	/* Destroy old allocator */
+	lib_ctx->allocator->allocator_destroy_func (lib_ctx->alloc_ctx);
+	lib_ctx->alloc_ctx = NULL;
+
+	lib_ctx->allocator = alloc;
+	assert (lib_ctx->allocator->allocator_init_func (&lib_ctx->alloc_ctx, get_random_seq (lib_ctx->prng)) != -1);
+
+	return 0;
 }

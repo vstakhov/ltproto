@@ -225,8 +225,8 @@ SET(LTPROTO_SRC src/ltproto.c src/util.c ${CMAKE_BINARY_DIR}/src/modules.c)
 SET(MODULES_SRC src/null.c src/udp_shmem.c)
 SET(MODULES_LIST null udp_shmem)
 
-SET(ALLOCATORS_SRC src/alloc_linear.c)
-SET(ALLOCATORS_LIST linear)
+SET(ALLOCATORS_SRC src/alloc_linear.c src/alloc_system.c)
+SET(ALLOCATORS_LIST linear system)
 
 AddModules(MODULES_LIST)
 AddAllocators(ALLOCATORS_LIST)

@@ -195,4 +195,11 @@ void* ltproto_alloc (size_t size);
  */
 void ltproto_free (size_t size, void *ptr);
 
+/**
+ * Try to switch allocator to another one
+ * @param name name of allocator to switch to
+ * @return -1 in case of error or 0 otherwise
+ */
+int ltproto_switch_allocator (const char *name);
+
 #endif /* LTPROTO_H_ */

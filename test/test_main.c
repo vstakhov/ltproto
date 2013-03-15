@@ -79,8 +79,10 @@ perform_module_test_simple (const char *mname)
 	kill (spid, SIGTERM);
 }
 
+typedef void (*alloc_test_func)(void **chunks, int chunks_count, int chunk_length);
+
 static void
-test_chunk_size (void **chunks, int chunks_count, int chunk_length)
+test_chunk_linear (void **chunks, int chunks_count, int chunk_length)
 {
 	int i, j;
 
@@ -96,47 +98,47 @@ test_chunk_size (void **chunks, int chunks_count, int chunk_length)
 }
 
 static void
-perform_allocator_test (int num_chunks)
+perform_allocator_test (const char *name, int num_chunks, alloc_test_func test_func)
 {
 	void **chunks;
 	void *tdata;
 	time_t msec;
 
 	chunks = calloc (num_chunks, sizeof (void *));
-	printf ("Test for allocator\n");
+	printf ("Test for `%s' allocator\n", name);
 
 	start_test_time (&tdata);
-	test_chunk_size (chunks, num_chunks, 512);
+	test_func (chunks, num_chunks, 512);
 	msec = end_test_time (tdata);
 	printf ("Linear alloc/free for 512 bytes chunks: %.3f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
-	test_chunk_size (chunks, num_chunks, 8 * 1024);
+	test_func (chunks, num_chunks, 8 * 1024);
 	msec = end_test_time (tdata);
 	printf ("Linear alloc/free for 8K chunks: %.3f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
-	test_chunk_size (chunks, num_chunks, 32 * 1024);
+	test_func (chunks, num_chunks, 32 * 1024);
 	msec = end_test_time (tdata);
 	printf ("Linear alloc/free for 32K chunks: %.3f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
-	test_chunk_size (chunks, num_chunks, 64 * 1024);
+	test_func (chunks, num_chunks, 64 * 1024);
 	msec = end_test_time (tdata);
 	printf ("Linear alloc/free for 64K chunks: %.3f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
-	test_chunk_size (chunks, num_chunks, 512 * 1024);
+	test_func (chunks, num_chunks, 512 * 1024);
 	msec = end_test_time (tdata);
 	printf ("Linear alloc/free for 512K chunks: %.3f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
-	test_chunk_size (chunks, num_chunks, 2000 * 1024);
+	test_func (chunks, num_chunks, 2000 * 1024);
 	msec = end_test_time (tdata);
 	printf ("Linear alloc/free for 2000K chunks: %.3f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
-	test_chunk_size (chunks, num_chunks, 100);
+	test_func (chunks, num_chunks, 100);
 	msec = end_test_time (tdata);
 	printf ("Linear alloc/free for 100 bytes chunks: %.3f milliseconds\n", round_test_time (msec));
 }
@@ -158,7 +160,10 @@ main (int argc, char **argv)
 	ltproto_init ();
 
 	/* Start a simple tests */
-	perform_allocator_test (10240);
+	assert (ltproto_switch_allocator ("system allocator") != -1);
+	perform_allocator_test ("system", 10240, test_chunk_linear);
+	assert (ltproto_switch_allocator ("linear allocator") != -1);
+	perform_allocator_test ("linear", 10240, test_chunk_linear);
 	//perform_module_test_simple ("null");
 	perform_module_test_simple ("udp-shmem");
 
