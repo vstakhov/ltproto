@@ -84,7 +84,9 @@
 
 #cmakedefine THREAD_UNSAFE		 1
 
+#cmakedefine HAVE_CLOCK_GETTIME  1
 #cmakedefine HAVE_CLOCK_MONOTONIC_RAW 1
+#cmakedefine HAVE_CLOCK_REALTIME_PRECISE 1
 
 #cmakedefine HAVE_SCHED_H		 1
 #cmakedefine HAVE_SCHED_SETAFFINITY 1

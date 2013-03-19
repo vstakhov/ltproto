@@ -48,8 +48,10 @@ start_test_time (void **time_data)
 #ifdef HAVE_CLOCK_GETTIME
 # ifdef HAVE_CLOCK_MONOTONIC_RAW
 	assert (clock_gettime (CLOCK_MONOTONIC_RAW, tdata) == 0);
+# elif defined(HAVE_CLOCK_REALTIME_PRECISE)
+	assert (clock_gettime (CLOCK_REALTIME_PRECISE, &tdata_cur) == 0);
 # else
-	assert (clock_gettime (CLOCK_MONOTONIC, tdata) == 0);
+	assert (clock_gettime (CLOCK_REALTIME, tdata) == 0);
 # endif
 #else
 	assert (gettimeofday (tdata, NULL) == 0);
@@ -60,7 +62,7 @@ start_test_time (void **time_data)
 /**
  * Get time from start of a test
  * @param time_data opaque data that is used and deallocated internally
- * @return time in microseconds
+ * @return time in nanoseconds
  */
 time_t
 end_test_time (void *time_data)
@@ -77,15 +79,17 @@ end_test_time (void *time_data)
 #ifdef HAVE_CLOCK_GETTIME
 # ifdef HAVE_CLOCK_MONOTONIC_RAW
 	assert (clock_gettime (CLOCK_MONOTONIC_RAW, &tdata_cur) == 0);
+# elif defined(HAVE_CLOCK_REALTIME_PRECISE)
+	assert (clock_gettime (CLOCK_REALTIME_PRECISE, &tdata_cur) == 0);
 # else
-	assert (clock_gettime (CLOCK_MONOTONIC, &tdata_cur) == 0);
+	assert (clock_gettime (CLOCK_REALTIME, &tdata_cur) == 0);
 # endif
-	diff = (tdata_cur.tv_sec - tdata_prev->tv_sec) * 1000000L +
-				(tdata_cur.tv_nsec - tdata_prev->tv_nsec) / 1000;
+	diff = (tdata_cur.tv_sec - tdata_prev->tv_sec) * 1000000000L +
+				(tdata_cur.tv_nsec - tdata_prev->tv_nsec);
 #else
 	assert (gettimeofday (&tdata_cur, NULL) == 0);
-	diff = (tdata_cur.tv_sec - tdata_prev->tv_sec) * 1000000L +
-			(tdata_cur.tv_usec - tdata_prev->tv_usec);
+	diff = (tdata_cur.tv_sec - tdata_prev->tv_sec) * 1000000000L +
+			(tdata_cur.tv_usec - tdata_prev->tv_usec) * 1000;
 #endif
 
 	free (time_data);
@@ -95,36 +99,37 @@ end_test_time (void *time_data)
 
 /**
  * Convert time to the nearest available double value according to clock resolution
- * @param microseconds input microseconds
+ * @param nanoseconds input nanoseconds
  * @return milliseconds with fractional part
  */
 double
-round_test_time (time_t microseconds)
+round_test_time (time_t nanoseconds)
 {
 	int res;
 	double result;
 #ifdef HAVE_CLOCK_GETTIME
-#ifdef HAVE_CLOCK_PROCESS_CPUTIME_ID
-    clock_getres (CLOCK_PROCESS_CPUTIME_ID, &ts);
-# elif defined(HAVE_CLOCK_VIRTUAL)
-    clock_getres (CLOCK_VIRTUAL, &ts);
+	struct timespec ts;
+#ifdef HAVE_CLOCK_MONOTONIC_RAW
+    clock_getres (CLOCK_MONOTONIC_RAW, &ts);
+# elif defined(HAVE_CLOCK_REALTIME_PRECISE)
+	clock_getres (CLOCK_REALTIME_PRECISE, &ts);
 # else
     clock_getres (CLOCK_REALTIME, &ts);
 # endif
 
-    res = (gint)log10 (1000000 / ts.tv_nsec);
+    res = (int)log10 (1000000000 / ts.tv_nsec);
     if (res < 0) {
         res = 0;
     }
-    if (res > 3) {
-        res = 3;
+    if (res > 6) {
+        res = 6;
     }
 #else
     /* For gettimeofday */
     res = 1;
 #endif
 
-    result = (int) (microseconds / pow (10, 3 - res));
+    result = (int) (nanoseconds / pow (10, 6 - res));
     result /= pow (10, res);
 
     return result;

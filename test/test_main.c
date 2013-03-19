@@ -69,12 +69,12 @@ perform_module_test_simple (const char *mname)
 	start_test_time (&tdata);
 	assert (do_client (50009, 8 * 1024 * 1024, 1024, mod) != -1);
 	msec = end_test_time (tdata);
-	printf ("Send buffer: 8Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.3f milliseconds\n", round_test_time (msec));
+	printf ("Send buffer: 8Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
 	assert (do_client (50009, 4 * 1024 * 1024, 2048, mod) != -1);
 	msec = end_test_time (tdata);
-	printf ("Send buffer: 4Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.3f milliseconds\n", round_test_time (msec));
+	printf ("Send buffer: 4Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
 
 	kill (spid, SIGTERM);
 }
@@ -110,37 +110,37 @@ perform_allocator_test (const char *name, int num_chunks, alloc_test_func test_f
 	start_test_time (&tdata);
 	test_func (chunks, num_chunks, 512);
 	msec = end_test_time (tdata);
-	printf ("Linear alloc/free for 512 bytes chunks: %.3f milliseconds\n", round_test_time (msec));
+	printf ("Linear alloc/free for 512 bytes chunks: %.6f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
 	test_func (chunks, num_chunks, 8 * 1024);
 	msec = end_test_time (tdata);
-	printf ("Linear alloc/free for 8K chunks: %.3f milliseconds\n", round_test_time (msec));
+	printf ("Linear alloc/free for 8K chunks: %.6f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
 	test_func (chunks, num_chunks, 32 * 1024);
 	msec = end_test_time (tdata);
-	printf ("Linear alloc/free for 32K chunks: %.3f milliseconds\n", round_test_time (msec));
+	printf ("Linear alloc/free for 32K chunks: %.6f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
 	test_func (chunks, num_chunks, 64 * 1024);
 	msec = end_test_time (tdata);
-	printf ("Linear alloc/free for 64K chunks: %.3f milliseconds\n", round_test_time (msec));
+	printf ("Linear alloc/free for 64K chunks: %.6f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
 	test_func (chunks, num_chunks, 512 * 1024);
 	msec = end_test_time (tdata);
-	printf ("Linear alloc/free for 512K chunks: %.3f milliseconds\n", round_test_time (msec));
+	printf ("Linear alloc/free for 512K chunks: %.6f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
 	test_func (chunks, num_chunks, 2000 * 1024);
 	msec = end_test_time (tdata);
-	printf ("Linear alloc/free for 2000K chunks: %.3f milliseconds\n", round_test_time (msec));
+	printf ("Linear alloc/free for 2000K chunks: %.6f milliseconds\n", round_test_time (msec));
 
 	start_test_time (&tdata);
 	test_func (chunks, num_chunks, 100);
 	msec = end_test_time (tdata);
-	printf ("Linear alloc/free for 100 bytes chunks: %.3f milliseconds\n", round_test_time (msec));
+	printf ("Linear alloc/free for 100 bytes chunks: %.6f milliseconds\n", round_test_time (msec));
 }
 
 int
