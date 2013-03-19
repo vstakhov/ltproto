@@ -143,6 +143,61 @@ perform_allocator_test (const char *name, int num_chunks, alloc_test_func test_f
 	printf ("Linear alloc/free for 100 bytes chunks: %.6f milliseconds\n", round_test_time (msec));
 }
 
+static void
+syscalls_test (void)
+{
+	void *tdata;
+	u_char *map;
+	time_t msec;
+	int fd, i, len, pages = 1024, psize = getpagesize ();
+
+	len = pages * psize;
+	// Check for shm related functions
+	start_test_time (&tdata);
+	fd = shm_open ("/perf_shm_open", O_RDWR | O_CREAT | O_EXCL, 00600);
+	assert (fd != -1);
+	msec = end_test_time (tdata);
+	printf ("Shm open call: %lu nanoseconds\n", msec);
+
+	start_test_time (&tdata);
+	assert (ftruncate (fd, len) != -1);
+	msec = end_test_time (tdata);
+	printf ("Shm ftruncate to 4Mb: %lu nanoseconds\n", msec);
+
+	start_test_time (&tdata);
+	assert ((map = mmap (NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)) != MAP_FAILED);
+	msec = end_test_time (tdata);
+	printf ("Shm mmap 4Mb: %lu nanoseconds\n", msec);
+
+	start_test_time (&tdata);
+	assert (mprotect (map, len, PROT_READ) != -1);
+	msec = end_test_time (tdata);
+	printf ("Shm mprotect 4Mb: %lu nanoseconds\n", msec);
+
+	start_test_time (&tdata);
+	for (i = 0; i < len; i += psize) {
+		assert (mprotect (map + i, psize, PROT_WRITE) != -1);
+	}
+	msec = end_test_time (tdata);
+	printf ("Shm %d mprotect 4Mb: %lu nanoseconds\n", pages, msec);
+
+	start_test_time (&tdata);
+	assert (mprotect (map, len, PROT_READ) != -1);
+	msec = end_test_time (tdata);
+	printf ("Shm mprotect 4Mb: %lu nanoseconds\n", msec);
+
+	start_test_time (&tdata);
+	munmap (map, len);
+	msec = end_test_time (tdata);
+	printf ("Shm munmap 4Mb: %lu nanoseconds\n", msec);
+
+	close (fd);
+	start_test_time (&tdata);
+	shm_unlink ("/perf_shm_open");
+	msec = end_test_time (tdata);
+	printf ("Shm unlink: %lu nanoseconds\n", msec);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -159,6 +214,7 @@ main (int argc, char **argv)
 
 	ltproto_init ();
 
+	syscalls_test ();
 	/* Start a simple tests */
 	assert (ltproto_switch_allocator ("system allocator") != -1);
 	perform_allocator_test ("system", 10240, test_chunk_linear);
