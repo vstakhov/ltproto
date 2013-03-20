@@ -149,7 +149,9 @@ syscalls_test (void)
 	void *tdata;
 	u_char *map;
 	time_t msec;
-	int fd, i, len, pages = 1024, psize = getpagesize ();
+	key_t key;
+	int fd, i, len, pages = 1024, psize = getpagesize (), shmid;
+	struct shmid_ds shm_ds;
 
 	len = pages * psize;
 	// Check for shm related functions
@@ -196,6 +198,28 @@ syscalls_test (void)
 	shm_unlink ("/perf_shm_open");
 	msec = end_test_time (tdata);
 	printf ("Shm unlink: %lu nanoseconds\n", msec);
+
+	// SysV memory
+	key = rand ();
+	start_test_time (&tdata);
+	assert ((shmid = shmget (key, len, IPC_CREAT | IPC_EXCL | 00640)) != -1);
+	msec = end_test_time (tdata);
+	printf ("shmget: %lu nanoseconds\n", msec);
+
+	start_test_time (&tdata);
+	assert ((map = shmat (shmid, NULL, 0)) != (void *)-1);
+	msec = end_test_time (tdata);
+	printf ("shmat: %lu nanoseconds\n", msec);
+
+	start_test_time (&tdata);
+	assert (shmdt (map) != -1);
+	msec = end_test_time (tdata);
+	printf ("shmdt: %lu nanoseconds\n", msec);
+
+	start_test_time (&tdata);
+	assert (shmctl (shmid, IPC_RMID, &shm_ds) != -1);
+	msec = end_test_time (tdata);
+	printf ("shmctl: %lu nanoseconds\n", msec);
 }
 
 int
