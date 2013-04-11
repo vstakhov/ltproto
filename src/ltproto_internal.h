@@ -175,6 +175,7 @@ struct ltproto_module {
  */
 struct ltproto_socket {
 	int fd;							// Socket descriptor
+	int tcp_fd;						// TCP link socket
 	struct ltproto_module *mod;		// Module handling this socket
 	UT_hash_handle hh;				// Hash entry
 	u_char mod_data[1];				// Module's private data

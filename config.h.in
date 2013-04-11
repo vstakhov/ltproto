@@ -33,6 +33,7 @@
 
 #cmakedefine HAVE_ARPA_INET_H    1
 #cmakedefine HAVE_NETINET_IN_H   1
+#cmakedefine HAVE_NETINET_TCP_H  1
 
 #cmakedefine HAVE_NETDB_H        1
 
@@ -161,6 +162,9 @@
 #endif
 #ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
+#endif
+#ifdef HAVE_NETINET_TCP_H
+#include <netinet/tcp.h>
 #endif
 
 /* unix sockets */

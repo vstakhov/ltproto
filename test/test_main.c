@@ -101,7 +101,7 @@ static void
 test_chunk_circular (void **chunks, int chunks_count, int chunk_length)
 {
 	int i, j;
-	const int ring_length = 16;
+	const int ring_length = 8;
 
 	for (i = 0; i < chunks_count / ring_length; i ++) {
 		for (j = 0 ; j < ring_length; j ++) {

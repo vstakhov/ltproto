@@ -121,6 +121,7 @@ ltproto_socket (void *module, struct ltproto_socket **psk)
 {
 	struct ltproto_module *mod;
 	struct ltproto_socket *sk;
+	int nodelay = 1, reuseaddr = 1;
 
 	assert (lib_ctx != NULL);
 	assert (psk != NULL);
@@ -135,6 +136,16 @@ ltproto_socket (void *module, struct ltproto_socket **psk)
 	if (sk == NULL) {
 		return -1;
 	}
+
+	sk->tcp_fd = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sk->tcp_fd == -1) {
+		mod->mod->module_close_func (mod->ctx, sk);
+		return -1;
+	}
+
+	setsockopt (sk->tcp_fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof (reuseaddr));
+	setsockopt (sk->tcp_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof (nodelay));
+
 	*psk = sk;
 	return 0;
 }
@@ -168,6 +179,9 @@ int
 ltproto_bind (struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
 	if (sk != NULL) {
+		if (bind (sk->tcp_fd, addr, addrlen) == -1) {
+			return -1;
+		}
 		return sk->mod->mod->module_bind_func (sk->mod->ctx, sk, addr, addrlen);
 	}
 
@@ -185,6 +199,9 @@ int
 ltproto_listen (struct ltproto_socket *sk, int backlog)
 {
 	if (sk != NULL) {
+		if (listen (sk->tcp_fd, backlog) == -1) {
+			return -1;
+		}
 		return sk->mod->mod->module_listen_func (sk->mod->ctx, sk, backlog);
 	}
 
@@ -203,15 +220,24 @@ struct ltproto_socket *
 ltproto_accept (struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen)
 {
 	struct ltproto_socket *ask;
+	struct sockaddr_storage st;
+	socklen_t st_len = sizeof (st);
+	int tcp_fd;
 
 	assert (lib_ctx != NULL);
 
 	if (sk != NULL) {
+		tcp_fd = accept (sk->tcp_fd, (struct sockaddr *)&st, &st_len);
+		if (tcp_fd == -1) {
+			return NULL;
+		}
 		ask = sk->mod->mod->module_accept_func (sk->mod->ctx, sk, addr, addrlen);
 		if (ask != NULL) {
+			ask->tcp_fd = tcp_fd;
 			return ask;
 		}
 		else {
+			close (tcp_fd);
 			errno = EINVAL;
 			return NULL;
 		}
@@ -232,6 +258,9 @@ int
 ltproto_connect (struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
 	if (sk != NULL) {
+		if (connect (sk->tcp_fd, addr, addrlen) == -1) {
+			return -1;
+		}
 		return sk->mod->mod->module_connect_func (sk->mod->ctx, sk, addr, addrlen);
 	}
 
@@ -249,8 +278,13 @@ ltproto_connect (struct ltproto_socket *sk, const struct sockaddr *addr, socklen
 int
 ltproto_read (struct ltproto_socket *sk, void *buf, size_t len)
 {
+	int r;
+
 	if (sk != NULL) {
-		return sk->mod->mod->module_read_func (sk->mod->ctx, sk, buf, len);
+		if ((r = sk->mod->mod->module_read_func (sk->mod->ctx, sk, buf, len)) == -1) {
+			return read (sk->tcp_fd, buf, len);
+		}
+		return r;
 	}
 
 	errno = -EBADF;
@@ -267,8 +301,13 @@ ltproto_read (struct ltproto_socket *sk, void *buf, size_t len)
 int
 ltproto_write (struct ltproto_socket *sk, const void *buf, size_t len)
 {
+	int r;
+
 	if (sk != NULL) {
-		return sk->mod->mod->module_write_func (sk->mod->ctx, sk, buf, len);
+		if ((r = sk->mod->mod->module_write_func (sk->mod->ctx, sk, buf, len)) == -1) {
+			return write (sk->tcp_fd, buf, len);
+		}
+		return r;
 	}
 
 	errno = -EBADF;
@@ -284,6 +323,7 @@ int
 ltproto_close (struct ltproto_socket *sk)
 {
 	if (sk != NULL) {
+		close (sk->tcp_fd);
 		return sk->mod->mod->module_close_func (sk->mod->ctx, sk);
 	}
 
@@ -301,8 +341,16 @@ ltproto_close (struct ltproto_socket *sk)
 int
 ltproto_select (struct ltproto_socket *sk, short what, const struct timeval *tv)
 {
+	int r;
+	struct pollfd pfd;
+
 	if (sk != NULL) {
-		return sk->mod->mod->module_select_func (sk->mod->ctx, sk, what, tv);
+		if ((r = sk->mod->mod->module_select_func (sk->mod->ctx, sk, what, tv)) <= 0) {
+			pfd.events = what;
+			pfd.fd = sk->tcp_fd;
+			pfd.revents = 0;
+			return poll (&pfd, 1, tv_to_msec(tv));
+		}
 	}
 
 	errno = -EBADF;
