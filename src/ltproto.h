@@ -43,7 +43,7 @@
  * SOCK_STREAM sockets at the moment.
  */
 
-
+struct ltproto_socket;
 /**
  * Init ltproto library
  */
@@ -61,7 +61,7 @@ void* ltproto_select_module (const char *module);
  * @param module pointer to module that should be used for this socket, if NULL the default module is selected
  * @return socket descriptor or -1 in case of error, see errno variable for details
  */
-int ltproto_socket (void *module);
+int ltproto_socket (void *module, struct ltproto_socket **sk);
 
 /**
  * Set up an option for a socket. Currently only O_NONBLOCK is supported.
@@ -70,7 +70,7 @@ int ltproto_socket (void *module);
  * @param optvalue a value of option
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
-int ltproto_setsockopt (int sock, int optname, int optvalue);
+int ltproto_setsockopt (struct ltproto_socket *sock, int optname, int optvalue);
 
 /**
  * Bind socket to a specific address
@@ -79,7 +79,7 @@ int ltproto_setsockopt (int sock, int optname, int optvalue);
  * @param addrlen length of addr structure (should be sizeof(struct sockaddr_in))
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
-int ltproto_bind (int sock, const struct sockaddr *addr, socklen_t addrlen);
+int ltproto_bind (struct ltproto_socket *sock, const struct sockaddr *addr, socklen_t addrlen);
 
 /**
  * Set listen mode for a specific socket
@@ -87,7 +87,7 @@ int ltproto_bind (int sock, const struct sockaddr *addr, socklen_t addrlen);
  * @param backlog listen backlog queue size
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
-int ltproto_listen (int sock, int backlog);
+int ltproto_listen (struct ltproto_socket *sock, int backlog);
 
 /**
  * Accept new connection from a listening socket
@@ -96,7 +96,8 @@ int ltproto_listen (int sock, int backlog);
  * @param addrlen length of addr structure (should be sizeof(struct sockaddr_in))
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
-int ltproto_accept (int sock, struct sockaddr *addr, socklen_t *addrlen);
+struct ltproto_socket* ltproto_accept (struct ltproto_socket *sock,
+		struct sockaddr *addr, socklen_t *addrlen);
 
 /**
  * Connect a socket to a peer
@@ -105,7 +106,7 @@ int ltproto_accept (int sock, struct sockaddr *addr, socklen_t *addrlen);
  * @param addrlen length of addr structure (should be sizeof(struct sockaddr_in))
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
-int ltproto_connect (int sock, const struct sockaddr *addr, socklen_t addrlen);
+int ltproto_connect (struct ltproto_socket *sock, const struct sockaddr *addr, socklen_t addrlen);
 
 /**
  * Read data from a socket
@@ -114,7 +115,7 @@ int ltproto_connect (int sock, const struct sockaddr *addr, socklen_t addrlen);
  * @param len length to read
  * @return number of bytes read or -1 in case of error
  */
-int ltproto_read (int sock, void *buf, size_t len);
+int ltproto_read (struct ltproto_socket *sock, void *buf, size_t len);
 
 /**
  * Get buffer without copying
@@ -122,7 +123,7 @@ int ltproto_read (int sock, void *buf, size_t len);
  * @param len read up to len bytes
  * @return pointer to a buffer
  */
-void* ltproto_read_zero (int sock, size_t len);
+void* ltproto_read_zero (struct ltproto_socket *sock, size_t len);
 
 /**
  * Release read buffer for desired address
@@ -130,7 +131,7 @@ void* ltproto_read_zero (int sock, size_t len);
  * @param address address to be released
  * @return 0 or -1 in case of error
  */
-int ltproto_read_release (int sock, void *address);
+int ltproto_read_release (struct ltproto_socket *sock, void *address);
 
 /**
  * Write data to a socket
@@ -139,14 +140,14 @@ int ltproto_read_release (int sock, void *address);
  * @param len length to write
  * @return number of bytes written or -1 in case of error
  */
-int ltproto_write (int sock, const void *buf, size_t len);
+int ltproto_write (struct ltproto_socket *sock, const void *buf, size_t len);
 
 /**
  * Get write buffer for zero-copy writing
  * @param sock socket descriptor
  * @param len length of write buffer required
  */
-void* ltproto_get_write_buf (int sock, size_t len);
+void* ltproto_get_write_buf (struct ltproto_socket *sock, size_t len);
 
 /**
  * Write buffer in zero-copy mode
@@ -155,7 +156,7 @@ void* ltproto_get_write_buf (int sock, size_t len);
  * @param len length of buffer
  * @return len or -1 in case of error
  */
-int ltproto_write_zero (int sock, void *buf, size_t len);
+int ltproto_write_zero (struct ltproto_socket *sock, void *buf, size_t len);
 
 
 /**
@@ -163,7 +164,7 @@ int ltproto_write_zero (int sock, void *buf, size_t len);
  * @param sock socket descriptor
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
-int ltproto_close (int sock);
+int ltproto_close (struct ltproto_socket *sock);
 
 /**
  * Wait for an event on a non-blocking socket
@@ -172,7 +173,7 @@ int ltproto_close (int sock);
  * @param tv timeout for waiting
  * @return 0 in case of timeout, 1 in case of event happened, -1 in case of error
  */
-int ltproto_select (int sock, short what, const struct timeval *tv);
+int ltproto_select (struct ltproto_socket *sock, short what, const struct timeval *tv);
 
 /**
  * Deinitialize of ltproto library

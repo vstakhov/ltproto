@@ -186,8 +186,6 @@ struct ltproto_socket {
 struct ltproto_ctx {
 	void *prng;							// Prng specific data
 	struct ltproto_module *modules;		// Available modules
-	struct ltproto_socket *sockets_hash; // Sockets table
-	struct ltproto_socket **sockets_ar;	// Array of sockets
 	struct ltproto_module *default_mod;	// Default module used for ltproto sockets
 	allocator_t *allocator;
 	struct lt_allocator_ctx *alloc_ctx;	// Allocator context

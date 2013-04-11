@@ -145,7 +145,7 @@ pid_t
 fork_server (u_short port, u_int recv_buffer_size, void *mod)
 {
 	pid_t pid;
-	int sock, conn;
+	struct ltproto_socket *sock, *conn;
 	struct sockaddr_in sin;
 	socklen_t slen = sizeof (struct sockaddr_in);
 	u_char *recv_buf;
@@ -162,8 +162,8 @@ fork_server (u_short port, u_int recv_buffer_size, void *mod)
 	}
 
 do_client:
-	sock = ltproto_socket (mod);
-	assert (sock != -1);
+	assert (ltproto_socket (mod, &sock) != -1);
+	assert (sock != NULL);
 
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons (port);
@@ -183,7 +183,7 @@ do_client:
 		while (ltproto_read (conn, recv_buf, recv_buffer_size) > 0);
 
 		ltproto_close (conn);
-	} while (conn != -1);
+	} while (conn != NULL);
 
 	_exit (EXIT_SUCCESS);
 	return 0;
@@ -199,7 +199,7 @@ do_client:
 int
 do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
 {
-	int sock;
+	struct ltproto_socket *sock;
 	u_int i;
 	struct sockaddr_in sin;
 	u_char *send_buf;
@@ -208,8 +208,8 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
 	sin.sin_port = htons (port);
 	sin.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
 
-	sock = ltproto_socket (mod);
-	assert (sock != -1);
+	assert (ltproto_socket (mod, &sock) != -1);
+	assert (sock != NULL);
 
 	send_buf = malloc (send_buffer_size);
 	assert (send_buf != NULL);

@@ -30,33 +30,6 @@
 static struct ltproto_ctx *lib_ctx = NULL;
 
 /**
- * Find a socket in socket array or hash
- * @param ctx library context
- * @param fd socket descriptor
- * @return sk structure or NULL if this fd was not found
- */
-static inline struct ltproto_socket*
-find_sk (struct ltproto_ctx *ctx, int fd)
-{
-	struct ltproto_socket *sk;
-
-	if (fd < 0) {
-		return NULL;
-	}
-
-	if (fd < SK_ARRAY_BUCKETS) {
-		return lt_ptr_atomic_get (&ctx->sockets_ar[fd]);
-	}
-	else {
-		SOCK_TABLE_RDLOCK (ctx);
-		HASH_FIND_INT (ctx->sockets_hash, &fd, sk);
-		SOCK_TABLE_UNLOCK (ctx);
-	}
-
-	return sk;
-}
-
-/**
  * Init ltproto library
  */
 void
@@ -68,9 +41,6 @@ ltproto_init (void)
 
 	lib_ctx = calloc (1, sizeof (struct ltproto_ctx));
 	assert (lib_ctx != NULL);
-
-	lib_ctx->sockets_ar = calloc (SK_ARRAY_BUCKETS, sizeof (struct ltproto_socket *));
-	assert (lib_ctx->sockets_ar != NULL);
 
 	lib_ctx->prng = init_prng ();
 
@@ -147,12 +117,13 @@ ltproto_select_module (const char *module)
  * @return socket descriptor or -1 in case of error, see errno variable for details
  */
 int
-ltproto_socket (void *module)
+ltproto_socket (void *module, struct ltproto_socket **psk)
 {
 	struct ltproto_module *mod;
 	struct ltproto_socket *sk;
 
 	assert (lib_ctx != NULL);
+	assert (psk != NULL);
 	if (module != NULL) {
 		mod = (struct ltproto_module *)module;
 	}
@@ -161,27 +132,11 @@ ltproto_socket (void *module)
 	}
 	assert (mod != NULL);
 	sk = mod->mod->module_socket_func (mod->ctx);
-	if (sk != NULL) {
-		if (find_sk (lib_ctx, sk->fd) != NULL) {
-			/* Duplicate socket, internal error */
-			errno = EINVAL;
-			return -1;
-		}
-		sk->mod = mod;
-		if (sk->fd < SK_ARRAY_BUCKETS) {
-			lt_ptr_atomic_set (&lib_ctx->sockets_ar[sk->fd], sk);
-		}
-		else {
-			SOCK_TABLE_WRLOCK (lib_ctx);
-			HASH_ADD_INT (lib_ctx->sockets_hash, fd, sk);
-			SOCK_TABLE_UNLOCK (lib_ctx);
-		}
-	}
-	else {
+	if (sk == NULL) {
 		return -1;
 	}
-
-	return sk->fd;
+	*psk = sk;
+	return 0;
 }
 
 /**
@@ -192,13 +147,8 @@ ltproto_socket (void *module)
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
 int
-ltproto_setsockopt (int sock, int optname, int optvalue)
+ltproto_setsockopt (struct ltproto_socket *sk, int optname, int optvalue)
 {
-	struct ltproto_socket *sk;
-
-	assert (lib_ctx != NULL);
-	sk = find_sk (lib_ctx, sock);
-
 	if (sk != NULL) {
 		return sk->mod->mod->module_setopts_func (sk->mod->ctx, sk, optname, optvalue);
 	}
@@ -215,13 +165,8 @@ ltproto_setsockopt (int sock, int optname, int optvalue)
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
 int
-ltproto_bind (int sock, const struct sockaddr *addr, socklen_t addrlen)
+ltproto_bind (struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
-	struct ltproto_socket *sk;
-
-	assert (lib_ctx != NULL);
-	sk = find_sk (lib_ctx, sock);
-
 	if (sk != NULL) {
 		return sk->mod->mod->module_bind_func (sk->mod->ctx, sk, addr, addrlen);
 	}
@@ -237,13 +182,8 @@ ltproto_bind (int sock, const struct sockaddr *addr, socklen_t addrlen)
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
 int
-ltproto_listen (int sock, int backlog)
+ltproto_listen (struct ltproto_socket *sk, int backlog)
 {
-	struct ltproto_socket *sk;
-
-	assert (lib_ctx != NULL);
-	sk = find_sk (lib_ctx, sock);
-
 	if (sk != NULL) {
 		return sk->mod->mod->module_listen_func (sk->mod->ctx, sk, backlog);
 	}
@@ -259,41 +199,26 @@ ltproto_listen (int sock, int backlog)
  * @param addrlen length of addr structure (should be sizeof(struct sockaddr_in))
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
-int
-ltproto_accept (int sock, struct sockaddr *addr, socklen_t *addrlen)
+struct ltproto_socket *
+ltproto_accept (struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen)
 {
-	struct ltproto_socket *sk, *ask;
+	struct ltproto_socket *ask;
 
 	assert (lib_ctx != NULL);
-	sk = find_sk (lib_ctx, sock);
 
 	if (sk != NULL) {
 		ask = sk->mod->mod->module_accept_func (sk->mod->ctx, sk, addr, addrlen);
 		if (ask != NULL) {
-			if (find_sk (lib_ctx, ask->fd) != NULL) {
-				/* Duplicate socket, internal error */
-				errno = EINVAL;
-				return -1;
-			}
-			ask->mod = sk->mod;
-			if (ask->fd < SK_ARRAY_BUCKETS) {
-				lt_ptr_atomic_set (&lib_ctx->sockets_ar[ask->fd], ask);
-			}
-			else {
-				SOCK_TABLE_WRLOCK (lib_ctx);
-				HASH_ADD_INT (lib_ctx->sockets_hash, fd, ask);
-				SOCK_TABLE_UNLOCK (lib_ctx);
-			}
+			return ask;
 		}
 		else {
 			errno = EINVAL;
-			return -1;
+			return NULL;
 		}
-		return ask->fd;
 	}
 
 	errno = -EBADF;
-	return -1;
+	return NULL;
 }
 
 /**
@@ -304,13 +229,8 @@ ltproto_accept (int sock, struct sockaddr *addr, socklen_t *addrlen)
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
 int
-ltproto_connect (int sock, const struct sockaddr *addr, socklen_t addrlen)
+ltproto_connect (struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
-	struct ltproto_socket *sk;
-
-	assert (lib_ctx != NULL);
-	sk = find_sk (lib_ctx, sock);
-
 	if (sk != NULL) {
 		return sk->mod->mod->module_connect_func (sk->mod->ctx, sk, addr, addrlen);
 	}
@@ -327,13 +247,8 @@ ltproto_connect (int sock, const struct sockaddr *addr, socklen_t addrlen)
  * @return number of bytes read or -1 in case of error
  */
 int
-ltproto_read (int sock, void *buf, size_t len)
+ltproto_read (struct ltproto_socket *sk, void *buf, size_t len)
 {
-	struct ltproto_socket *sk;
-
-	assert (lib_ctx != NULL);
-	sk = find_sk (lib_ctx, sock);
-
 	if (sk != NULL) {
 		return sk->mod->mod->module_read_func (sk->mod->ctx, sk, buf, len);
 	}
@@ -350,13 +265,8 @@ ltproto_read (int sock, void *buf, size_t len)
  * @return number of bytes written or -1 in case of error
  */
 int
-ltproto_write (int sock, const void *buf, size_t len)
+ltproto_write (struct ltproto_socket *sk, const void *buf, size_t len)
 {
-	struct ltproto_socket *sk;
-
-	assert (lib_ctx != NULL);
-	sk = find_sk (lib_ctx, sock);
-
 	if (sk != NULL) {
 		return sk->mod->mod->module_write_func (sk->mod->ctx, sk, buf, len);
 	}
@@ -371,28 +281,10 @@ ltproto_write (int sock, const void *buf, size_t len)
  * @return 0 if succeeded, -1 in case of error, see errno variable for details
  */
 int
-ltproto_close (int sock)
+ltproto_close (struct ltproto_socket *sk)
 {
-	struct ltproto_socket *sk;
-	int ret;
-
-	assert (lib_ctx != NULL);
-	sk = find_sk (lib_ctx, sock);
-
 	if (sk != NULL) {
-		ret = sk->mod->mod->module_close_func (sk->mod->ctx, sk);
-		if (ret != -1) {
-			if (sock < SK_ARRAY_BUCKETS) {
-				lt_ptr_atomic_set (&lib_ctx->sockets_ar[sock], NULL);
-			}
-			else {
-				SOCK_TABLE_WRLOCK (lib_ctx);
-				HASH_DEL (lib_ctx->sockets_hash, sk);
-				SOCK_TABLE_UNLOCK (lib_ctx);
-			}
-			free (sk);
-		}
-		return ret;
+		return sk->mod->mod->module_close_func (sk->mod->ctx, sk);
 	}
 
 	errno = -EBADF;
@@ -407,13 +299,8 @@ ltproto_close (int sock)
  * @return 0 in case of timeout, 1 in case of event happened, -1 in case of error
  */
 int
-ltproto_select (int sock, short what, const struct timeval *tv)
+ltproto_select (struct ltproto_socket *sk, short what, const struct timeval *tv)
 {
-	struct ltproto_socket *sk;
-
-	assert (lib_ctx != NULL);
-	sk = find_sk (lib_ctx, sock);
-
 	if (sk != NULL) {
 		return sk->mod->mod->module_select_func (sk->mod->ctx, sk, what, tv);
 	}
@@ -429,22 +316,6 @@ void
 ltproto_destroy (void)
 {
 	struct ltproto_module *mod, *mod_tmp;
-	struct ltproto_socket *sk, *sk_tmp;
-	int i;
-
-	/* Close all sockets */
-	for (i = 0; i < SK_ARRAY_BUCKETS; i ++) {
-		if (lib_ctx->sockets_ar[i] != NULL) {
-			sk = lib_ctx->sockets_ar[i];
-			sk->mod->mod->module_close_func (sk->mod->ctx, sk);
-			free (sk);
-		}
-	}
-	HASH_ITER (hh, lib_ctx->sockets_hash, sk, sk_tmp) {
-		sk->mod->mod->module_close_func (sk->mod->ctx, sk);
-		HASH_DEL (lib_ctx->sockets_hash, sk);
-		free (sk);
-	}
 
 	/* Clear all modules */
 	HASH_ITER (hh, lib_ctx->modules, mod, mod_tmp) {
