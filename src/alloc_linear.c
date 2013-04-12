@@ -58,6 +58,13 @@ struct alloc_arena {
 	TAILQ_ENTRY (alloc_arena) link;
 };
 
+struct foreign_alloc_arena {
+	uintptr_t begin;					// Begin of arena
+	size_t len;							// Length of arena
+	uint64_t seq;
+	UT_hash_handle hh;
+};
+
 struct alloc_chunk {
 	uintptr_t base;						// Base address of chunk
 	size_t len;							// Length of chunk
@@ -74,6 +81,7 @@ struct lt_linear_allocator_ctx {
 		struct alloc_chunk *chunk;
 		struct alloc_arena *arena;
 	} free_chunks [REUSED_QUEUE_MAX];	// Free chunks that can be reused
+	struct foreign_alloc_arena *attached_arenas;
 	unsigned int free_chunks_cnt;		// Amount of chunks if free chunk queue
 	unsigned int last_free;
 };
@@ -420,16 +428,54 @@ linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_ta
 	return NULL;
 }
 
-struct lt_alloc_tag *
-linear_gettag_func (struct lt_allocator_ctx *ctx, void *ptr)
-{
-	/* TODO: */
-	return NULL;
-}
 void *
 linear_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag)
 {
-	/* TODO: */
+	struct foreign_alloc_arena *far;
+	struct lt_linear_allocator_ctx *real_ctx = (struct lt_linear_allocator_ctx *)ctx;
+	char arena_name[64];
+	struct stat st;
+	void *map;
+	int fd;
+
+	HASH_FIND(hh, real_ctx->attached_arenas, &tag->seq, sizeof(tag->seq), far);
+
+	if (far != NULL) {
+		assert (tag->id < far->len);
+		return (void *)(far->begin + tag->id);
+	}
+	else {
+		/* Try to attach zone */
+		snprintf (arena_name, sizeof (arena_name), "/lin_%lu", (long unsigned)tag->seq);
+		fd = shm_open (arena_name, O_RDONLY, 00600);
+		if (fd == -1) {
+			return NULL;
+		}
+
+		if (fstat (fd, &st) == -1) {
+			close (fd);
+			return NULL;
+		}
+
+		if ((map = mmap (NULL, st.st_size, PROT_READ, 0, fd, 0)) == MAP_FAILED) {
+			close (fd);
+			return NULL;
+		}
+		close (fd);
+		far = calloc (1, sizeof (struct foreign_alloc_arena));
+		if (far == NULL) {
+			munmap (map, st.st_size);
+			return NULL;
+		}
+		far->begin = (uintptr_t)map;
+		far->len = st.st_size;
+		far->seq = tag->seq;
+		HASH_ADD (hh, real_ctx->attached_arenas, seq, sizeof(far->seq), far);
+
+		assert (tag->id < far->len);
+		return (void *)(far->begin + tag->id);
+	}
+
 	return NULL;
 }
 
@@ -496,6 +542,7 @@ linear_destroy_func (struct lt_allocator_ctx *ctx)
 {
 	struct alloc_chunk *chunk, *tmp_chunk;
 	struct alloc_arena *ar, *tmp_ar;
+	struct foreign_alloc_arena *far, *far_tmp;
 	struct lt_linear_allocator_ctx *real_ctx = (struct lt_linear_allocator_ctx *)ctx;
 	char arena_name[64];
 
@@ -504,6 +551,12 @@ linear_destroy_func (struct lt_allocator_ctx *ctx)
 		munmap ((void *)ar->begin, ar->len);
 		TAILQ_FOREACH_SAFE (chunk, &ar->chunks, link, tmp_chunk) {
 			free (chunk);
+		}
+		HASH_ITER (hh, real_ctx->attached_arenas, far, far_tmp) {
+			munmap ((void *)far->begin, far->len);
+			HASH_DEL (real_ctx->attached_arenas, far);
+			free (far);
+
 		}
 		snprintf (arena_name, sizeof (arena_name), "/lin_%lu", (long unsigned)ar->tag.seq);
 		shm_unlink (arena_name);
