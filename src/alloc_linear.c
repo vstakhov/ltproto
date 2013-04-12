@@ -39,8 +39,7 @@ const unsigned int default_arena_pages = 512;
 #define REUSED_QUEUE_MAX 16
 
 int linear_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq);
-void * linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size);
-struct lt_alloc_tag * linear_gettag_func (struct lt_allocator_ctx *ctx, void *ptr);
+void * linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_tag *tag);
 void * linear_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag);
 void linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size);
 void linear_destroy_func (struct lt_allocator_ctx *ctx);
@@ -85,7 +84,6 @@ allocator_t linear_allocator = {
 	.priority = 1,
 	.allocator_init_func = linear_init_func,
 	.allocator_alloc_func = linear_alloc_func,
-	.allocator_gettag_func = linear_gettag_func,
 	.allocator_attachtag_func = linear_attachtag_func,
 	.allocator_free_func = linear_free_func,
 	.allocator_destroy_func = linear_destroy_func
@@ -265,7 +263,7 @@ arena_find_free_chunk (struct lt_linear_allocator_ctx *ctx, struct alloc_arena *
  * @return new or reused chunk or NULL if all arenas are full
  */
 static struct alloc_chunk*
-find_free_chunk (struct lt_linear_allocator_ctx *ctx, size_t size)
+find_free_chunk (struct lt_linear_allocator_ctx *ctx, size_t size, struct alloc_arena **par)
 {
 	struct alloc_chunk *cur, *tmp = NULL;
 	struct alloc_arena *ar;
@@ -287,6 +285,7 @@ find_free_chunk (struct lt_linear_allocator_ctx *ctx, size_t size)
 	if (sel >= 0) {
 		/* We just reuse chunk without arena modifications */
 		tmp = ctx->free_chunks[sel].chunk;
+		*par = ctx->free_chunks[sel].arena;
 		//printf("REUSED CHUNK %p\n", tmp);
 		ctx->free_chunks_cnt --;
 		for (i = sel; i < ctx->free_chunks_cnt; i ++) {
@@ -302,6 +301,7 @@ find_free_chunk (struct lt_linear_allocator_ctx *ctx, size_t size)
 		if (ar->free >= size) {
 			cur = arena_find_free_chunk (ctx, ar, size);
 			if (cur) {
+				*par = ar;
 				return cur;
 			}
 		}
@@ -388,15 +388,18 @@ linear_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq)
 }
 
 void *
-linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size)
+linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_tag *tag)
 {
 	struct alloc_chunk *chunk;
+	struct alloc_arena *ar = NULL;
 	struct lt_linear_allocator_ctx *real_ctx = (struct lt_linear_allocator_ctx *)ctx;
 
 	assert (size != 0);
 
-	chunk = find_free_chunk (real_ctx, size);
-	if (chunk != NULL) {
+	chunk = find_free_chunk (real_ctx, size, &ar);
+	if (chunk != NULL && ar != NULL) {
+		tag->seq = ar->tag.seq;
+		tag->id = chunk->base;
 		return (void *)chunk->base;
 	}
 
@@ -405,8 +408,10 @@ linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size)
 		return NULL;
 	}
 
-	chunk = find_free_chunk (real_ctx, size);
+	chunk = find_free_chunk (real_ctx, size, &ar);
 	if (chunk != NULL) {
+		tag->seq = ar->tag.seq;
+		tag->id = chunk->base;
 		return (void *)chunk->base;
 	}
 

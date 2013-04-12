@@ -33,8 +33,7 @@
  */
 
 int system_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq);
-void * system_alloc_func (struct lt_allocator_ctx *ctx, size_t size);
-struct lt_alloc_tag * system_gettag_func (struct lt_allocator_ctx *ctx, void *ptr);
+void * system_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_tag *tag);
 void * system_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag);
 void system_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size);
 void system_destroy_func (struct lt_allocator_ctx *ctx);
@@ -45,7 +44,6 @@ allocator_t system_allocator = {
 	.priority = 0,
 	.allocator_init_func = system_init_func,
 	.allocator_alloc_func = system_alloc_func,
-	.allocator_gettag_func = system_gettag_func,
 	.allocator_attachtag_func = system_attachtag_func,
 	.allocator_free_func = system_free_func,
 	.allocator_destroy_func = system_destroy_func
@@ -59,15 +57,10 @@ system_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq)
 }
 
 void *
-system_alloc_func (struct lt_allocator_ctx *ctx, size_t size)
+system_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_tag *tag)
 {
+	memset (tag, 0, sizeof (struct lt_alloc_tag));
 	return malloc (size);
-}
-
-struct lt_alloc_tag *
-system_gettag_func (struct lt_allocator_ctx *ctx, void *ptr)
-{
-	return NULL;
 }
 
 void *

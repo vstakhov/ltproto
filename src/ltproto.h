@@ -187,7 +187,8 @@ void ltproto_destroy (void);
  * Allocate chunk from ltproto allocator
  * @param size size of chunk
  */
-void* ltproto_alloc (size_t size);
+struct lt_alloc_tag;
+void* ltproto_alloc (size_t size, struct lt_alloc_tag *tag);
 
 /**
  * Free chunk allocated by ltproto

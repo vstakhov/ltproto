@@ -127,8 +127,7 @@ typedef struct allocator_s {
 	char *name;
 	int priority;
 	int (*allocator_init_func)(struct lt_allocator_ctx **ctx, uint64_t init_seq);
-	void * (*allocator_alloc_func)(struct lt_allocator_ctx *ctx, size_t size);
-	struct lt_alloc_tag * (*allocator_gettag_func)(struct lt_allocator_ctx *ctx, void *ptr);
+	void * (*allocator_alloc_func)(struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_tag *tag);
 	void * (*allocator_attachtag_func)(struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag);
 	void (*allocator_free_func)(struct lt_allocator_ctx *ctx, void *addr, size_t size);
 	void (*allocator_destroy_func)(struct lt_allocator_ctx *ctx);

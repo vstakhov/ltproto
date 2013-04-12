@@ -384,11 +384,11 @@ ltproto_destroy (void)
  * @param size size of chunk
  */
 void*
-ltproto_alloc (size_t size)
+ltproto_alloc (size_t size, struct lt_alloc_tag *tag)
 {
 	assert (size != 0);
 
-	return lib_ctx->allocator->allocator_alloc_func (lib_ctx->alloc_ctx, size);
+	return lib_ctx->allocator->allocator_alloc_func (lib_ctx->alloc_ctx, size, tag);
 }
 
 /**

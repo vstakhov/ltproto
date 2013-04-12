@@ -85,9 +85,10 @@ static void
 test_chunk_linear (void **chunks, int chunks_count, int chunk_length)
 {
 	int i, j;
+	struct lt_alloc_tag tag;
 
 	for (i = 0; i < chunks_count; i ++) {
-		chunks[i] = ltproto_alloc (chunk_length);
+		chunks[i] = ltproto_alloc (chunk_length, &tag);
 		for (j = 0; j < i; j ++) {
 			assert (chunks[i] != chunks[j]);
 		}
@@ -102,10 +103,11 @@ test_chunk_circular (void **chunks, int chunks_count, int chunk_length)
 {
 	int i, j;
 	const int ring_length = 8;
+	struct lt_alloc_tag tag;
 
 	for (i = 0; i < chunks_count / ring_length; i ++) {
 		for (j = 0 ; j < ring_length; j ++) {
-			chunks[j] = ltproto_alloc (chunk_length);
+			chunks[j] = ltproto_alloc (chunk_length, &tag);
 		}
 		for (j = 0 ; j < ring_length; j ++) {
 			ltproto_free (chunk_length, chunks[j]);
