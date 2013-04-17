@@ -84,19 +84,20 @@ static void*
 lt_objcache_alloc_page (size_t page_size, size_t elt_size, struct lt_objcache_page *page)
 {
 	u_char map_byte;
-	u_int cur_offset = 0, i, j;
+	u_int i, j;
+	int cur_offset = -1;
 
 	assert (page->cur_elts < page->max_elts);
 
 
-	for (i = 0; i < page->max_elts / NBBY && cur_offset == 0; i ++) {
+	for (i = 0; i < page->max_elts / NBBY && cur_offset == -1; i ++) {
 		map_byte = page->data[i];
 		if (map_byte & 0xff) {
 			/* Full byte */
 			continue;
 		}
 		for (j = 0; j < NBBY; j ++) {
-			if (map_byte & 0x80) {
+			if ((map_byte & 0x80) == 0) {
 				cur_offset = i * NBBY + j;
 				break;
 			}
@@ -104,7 +105,7 @@ lt_objcache_alloc_page (size_t page_size, size_t elt_size, struct lt_objcache_pa
 		}
 	}
 
-	assert (cur_offset != 0);
+	assert (cur_offset != -1);
 	setbit (page->data, cur_offset);
 	page->cur_elts ++;
 	return page->data + page->data_offset + cur_offset * elt_size;

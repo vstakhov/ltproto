@@ -314,6 +314,7 @@ udp_shmem_init_func (struct lt_module_ctx **ctx)
 {
 	*ctx = calloc (1, sizeof (struct lt_module_ctx));
 	(*ctx)->len = sizeof (struct lt_module_ctx);
+	(*ctx)->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_udp));
 
 	return 0;
 }
@@ -323,11 +324,11 @@ udp_shmem_socket_func (struct lt_module_ctx *ctx)
 {
 	struct ltproto_socket_udp *sk;
 
-	sk = calloc (1, sizeof (struct ltproto_socket_udp));
+	sk = lt_objcache_alloc (ctx->sk_cache);
 	assert (sk != NULL);
 	sk->fd = socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (sk->fd == -1) {
-		free (sk);
+		lt_objcache_free (ctx->sk_cache, sk);
 		return NULL;
 	}
 	sk->cookie_local = rand ();
@@ -399,13 +400,13 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 #ifndef THREAD_UNSAFE
 		pthread_mutex_unlock (&usk->inq_lock);
 #endif
-		nsk = calloc (1, sizeof (struct ltproto_socket_udp));
+		nsk = lt_objcache_alloc (ctx->sk_cache);
 		if (nsk == NULL) {
 			return NULL;
 		}
 		nsk->fd = dup (usk->fd);
 		if (nsk->fd == -1) {
-			free (nsk);
+			lt_objcache_free (ctx->sk_cache, nsk);
 			return NULL;
 		}
 		nsk->common.data_sock.parent = usk;
@@ -423,7 +424,7 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 		if (sendto (nsk->fd, &lcmd, sizeof (lcmd), 0, (struct sockaddr *)&cmd->sin, sizeof (cmd->sin)) == -1) {
 			serrno = errno;
 			close (nsk->fd);
-			free (nsk);
+			lt_objcache_free (ctx->sk_cache, nsk);
 			errno = serrno;
 			return NULL;
 		}
@@ -528,6 +529,7 @@ int
 udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk, *csk;
+	int serrno, ret;
 
 	if (usk->state == SHMEM_UDP_STATE_LISTEN) {
 #ifndef THREAD_SAFE
@@ -542,12 +544,18 @@ udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 #endif
 	}
 
-	return close (sk->fd);
+	ret = close (sk->fd);
+	serrno = errno;
+	lt_objcache_free (ctx->sk_cache, sk);
+	errno = serrno;
+
+	return ret;
 }
 
 int
 udp_shmem_destroy_func (struct lt_module_ctx *ctx)
 {
+	lt_objcache_destroy (ctx->sk_cache);
 	free (ctx);
 	return 0;
 }

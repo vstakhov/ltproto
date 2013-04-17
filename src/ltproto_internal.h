@@ -27,6 +27,7 @@
 #include "config.h"
 #include "uthash.h"
 #include "util.h"
+#include "objcache.h"
 
 /**
  * @file ltproto_internal.h
@@ -157,6 +158,7 @@ struct lt_alloc_tag {
 struct lt_module_ctx {
 	size_t len;						// Length of the context
 	struct ltproto_ctx *lib_ctx;	// Parent ctx
+	struct lt_objcache *sk_cache;	// Object cache for sockets
 };
 
 /**

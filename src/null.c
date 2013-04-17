@@ -68,6 +68,7 @@ null_init_func (struct lt_module_ctx **ctx)
 {
 	*ctx = calloc (1, sizeof (struct lt_module_ctx));
 	(*ctx)->len = sizeof (struct lt_module_ctx);
+	(*ctx)->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket));
 
 	return 0;
 }
@@ -77,11 +78,11 @@ null_socket_func (struct lt_module_ctx *ctx)
 {
 	struct ltproto_socket *sk;
 
-	sk = calloc (1, sizeof (struct ltproto_socket));
+	sk = lt_objcache_alloc (ctx->sk_cache);
 	assert (sk != NULL);
 	sk->fd = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sk->fd == -1) {
-		free (sk);
+		lt_objcache_free (ctx->sk_cache, sk);
 		return NULL;
 	}
 
@@ -120,7 +121,7 @@ null_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct s
 		return NULL;
 	}
 
-	nsk = calloc (1, sizeof (struct ltproto_socket));
+	nsk = lt_objcache_alloc (ctx->sk_cache);
 	assert (nsk != NULL);
 	nsk->fd = afd;
 
@@ -164,12 +165,20 @@ null_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short wh
 int
 null_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
-	return close (sk->fd);
+	int serrno, ret;
+
+	ret = close (sk->fd);
+	serrno = errno;
+	lt_objcache_free (ctx->sk_cache, sk);
+	errno = serrno;
+
+	return ret;
 }
 
 int
 null_destroy_func (struct lt_module_ctx *ctx)
 {
+	lt_objcache_destroy (ctx->sk_cache);
 	free (ctx);
 	return 0;
 }
