@@ -90,7 +90,6 @@ struct ltproto_socket_udp {
 	int fd;							// Socket descriptor
 	struct ltproto_module *mod;		// Module handling this socket
 	UT_hash_handle hh;				// Hash entry
-	u_char mod_data[1];				// Module's private data
 	enum {
 		SHMEM_UDP_STATE_INIT = 0,
 		SHMEM_UDP_STATE_LISTEN,
@@ -123,6 +122,13 @@ struct ltproto_socket_udp {
 	pthread_mutex_t inq_lock;
 	pthread_mutex_t outq_lock;
 #endif
+};
+
+struct lt_udp_module_ctx {
+	size_t len;						// Length of the context
+	struct ltproto_ctx *lib_ctx;	// Parent ctx
+	struct lt_objcache *sk_cache;	// Object cache for sockets
+	struct lt_objcache *cmd_cache;			// Object cache for udp commands
 };
 
 int udp_shmem_init_func (struct lt_module_ctx **ctx);
@@ -230,6 +236,7 @@ udp_shmem_recv_command (struct ltproto_socket_udp *usk, int *saved_errno)
 {
 	struct ltproto_udp_command cmd;
 	struct ltproto_udp_command_entry *pcmd;
+	struct lt_udp_module_ctx *ctx = (struct lt_udp_module_ctx *)usk->mod->ctx;
 	int r;
 	struct sockaddr_in sin;
 	socklen_t slen = sizeof (struct sockaddr_in);
@@ -248,7 +255,7 @@ udp_shmem_recv_command (struct ltproto_socket_udp *usk, int *saved_errno)
 	}
 
 	/* Actually we alloc memory for the whole entry here */
-	pcmd = malloc (sizeof (struct ltproto_udp_command_entry));
+	pcmd = lt_objcache_alloc (ctx->cmd_cache);
 	assert (pcmd != NULL);
 	memcpy (&pcmd->cmd, &cmd, sizeof (cmd));
 	memcpy (&pcmd->sin, &sin, slen);
@@ -312,9 +319,13 @@ udp_shmem_expect_command (struct ltproto_socket_udp *usk, u_int cmd, int *saved_
 int
 udp_shmem_init_func (struct lt_module_ctx **ctx)
 {
-	*ctx = calloc (1, sizeof (struct lt_module_ctx));
-	(*ctx)->len = sizeof (struct lt_module_ctx);
-	(*ctx)->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_udp));
+	struct lt_udp_module_ctx *real_ctx;
+
+	real_ctx = calloc (1, sizeof (struct lt_module_ctx));
+	real_ctx->len = sizeof (struct lt_udp_module_ctx);
+	real_ctx->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_udp));
+	real_ctx->cmd_cache = lt_objcache_create (sizeof (struct ltproto_udp_command_entry));
+	*ctx = (struct lt_module_ctx *)real_ctx;
 
 	return 0;
 }
@@ -323,12 +334,13 @@ struct ltproto_socket *
 udp_shmem_socket_func (struct lt_module_ctx *ctx)
 {
 	struct ltproto_socket_udp *sk;
+	struct lt_udp_module_ctx *real_ctx = (struct lt_udp_module_ctx *)ctx;
 
-	sk = lt_objcache_alloc (ctx->sk_cache);
+	sk = lt_objcache_alloc (real_ctx->sk_cache);
 	assert (sk != NULL);
 	sk->fd = socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (sk->fd == -1) {
-		lt_objcache_free (ctx->sk_cache, sk);
+		lt_objcache_free (real_ctx->sk_cache, sk);
 		return NULL;
 	}
 	sk->cookie_local = rand ();
@@ -380,6 +392,7 @@ struct ltproto_socket *
 udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk, *nsk = NULL;
+	struct lt_udp_module_ctx *real_ctx = (struct lt_udp_module_ctx *)ctx;
 	struct ltproto_udp_command_entry *cmd;
 	struct ltproto_udp_command lcmd;
 	int serrno;
@@ -400,13 +413,13 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 #ifndef THREAD_UNSAFE
 		pthread_mutex_unlock (&usk->inq_lock);
 #endif
-		nsk = lt_objcache_alloc (ctx->sk_cache);
+		nsk = lt_objcache_alloc (real_ctx->sk_cache);
 		if (nsk == NULL) {
 			return NULL;
 		}
 		nsk->fd = dup (usk->fd);
 		if (nsk->fd == -1) {
-			lt_objcache_free (ctx->sk_cache, nsk);
+			lt_objcache_free (real_ctx->sk_cache, nsk);
 			return NULL;
 		}
 		nsk->common.data_sock.parent = usk;
@@ -424,7 +437,7 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 		if (sendto (nsk->fd, &lcmd, sizeof (lcmd), 0, (struct sockaddr *)&cmd->sin, sizeof (cmd->sin)) == -1) {
 			serrno = errno;
 			close (nsk->fd);
-			lt_objcache_free (ctx->sk_cache, nsk);
+			lt_objcache_free (real_ctx->sk_cache, nsk);
 			errno = serrno;
 			return NULL;
 		}
@@ -555,7 +568,10 @@ udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 int
 udp_shmem_destroy_func (struct lt_module_ctx *ctx)
 {
-	lt_objcache_destroy (ctx->sk_cache);
-	free (ctx);
+	struct lt_udp_module_ctx *real_ctx = (struct lt_udp_module_ctx *)ctx;
+
+	lt_objcache_destroy (real_ctx->cmd_cache);
+	lt_objcache_destroy (real_ctx->sk_cache);
+	free (real_ctx);
 	return 0;
 }
