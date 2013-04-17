@@ -53,6 +53,7 @@ struct alloc_arena {
 	uintptr_t pos;						// Position of free space pointer
 	uintptr_t last;						// Last byte of arena
 	size_t free;						// Free space
+	struct lt_objcache *chunk_cache;	// Object cache for chunks
 	struct alloc_chunk *last_chunk;		// Last chunk created
 	TAILQ_HEAD (chunk_head, alloc_chunk) chunks;	// Allocated chunks
 	TAILQ_ENTRY (alloc_arena) link;
@@ -144,6 +145,7 @@ create_shared_arena (struct lt_linear_allocator_ctx *ctx, size_t size)
 		errno = serrno;
 		return -1;
 	}
+	new->chunk_cache = lt_objcache_create (sizeof (struct alloc_chunk));
 	new->begin = (uintptr_t)map;
 	new->last = new->begin + size;
 	new->len = size;
@@ -162,7 +164,7 @@ create_chunk (uintptr_t begin, size_t size, struct alloc_arena *ar, struct alloc
 {
 	struct alloc_chunk *chunk;
 
-	chunk = malloc (sizeof (struct alloc_chunk));
+	chunk = lt_objcache_alloc (ar->chunk_cache);
 	assert (chunk != NULL);
 	chunk->base = begin;
 	chunk->len = size;
@@ -528,7 +530,7 @@ linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size)
 		ar_exp->last = chunk_exp->base + chunk_exp->len;
 	}
 
-	free (chunk_exp);
+	lt_objcache_free (ar_exp->chunk_cache, chunk_exp);
 
 	/* Insert element to expire queue */
 	//printf("chunk insert: %p, len: %zd, idx: %d\n", chunk, chunk->len, sel);
@@ -540,7 +542,6 @@ linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size)
 void
 linear_destroy_func (struct lt_allocator_ctx *ctx)
 {
-	struct alloc_chunk *chunk, *tmp_chunk;
 	struct alloc_arena *ar, *tmp_ar;
 	struct foreign_alloc_arena *far, *far_tmp;
 	struct lt_linear_allocator_ctx *real_ctx = (struct lt_linear_allocator_ctx *)ctx;
@@ -549,9 +550,7 @@ linear_destroy_func (struct lt_allocator_ctx *ctx)
 	/* Free all arenas and chunks */
 	TAILQ_FOREACH_SAFE (ar, &real_ctx->arenas, link, tmp_ar) {
 		munmap ((void *)ar->begin, ar->len);
-		TAILQ_FOREACH_SAFE (chunk, &ar->chunks, link, tmp_chunk) {
-			free (chunk);
-		}
+		lt_objcache_destroy (ar->chunk_cache);
 		HASH_ITER (hh, real_ctx->attached_arenas, far, far_tmp) {
 			munmap ((void *)far->begin, far->len);
 			HASH_DEL (real_ctx->attached_arenas, far);
