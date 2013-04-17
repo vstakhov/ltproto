@@ -232,11 +232,17 @@ ENDIF(ENABLE_THREAD_UNSAFE MATCHES "ON")
 CONFIGURE_FILE(config.h.in src/config.h)
 INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/src")
 
-SET(LTPROTO_SRC src/ltproto.c src/util.c ${CMAKE_BINARY_DIR}/src/modules.c)
-SET(MODULES_SRC src/null.c src/udp_shmem.c)
+SET(LTPROTO_SRC src/ltproto.c 
+				src/util.c
+				src/objcache.c 
+				${CMAKE_BINARY_DIR}/src/modules.c)
+				
+SET(MODULES_SRC src/null.c 
+				src/udp_shmem.c)
 SET(MODULES_LIST null udp_shmem)
 
-SET(ALLOCATORS_SRC src/alloc_linear.c src/alloc_system.c)
+SET(ALLOCATORS_SRC	src/alloc_linear.c 
+					src/alloc_system.c)
 SET(ALLOCATORS_LIST linear system)
 
 AddModules(MODULES_LIST)
