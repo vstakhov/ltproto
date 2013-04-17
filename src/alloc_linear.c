@@ -34,7 +34,7 @@
  */
 
 /* How much pages are in an arena by default */
-const unsigned int default_arena_pages = 512;
+const unsigned int default_arena_pages = 128;
 /* How much elements can we allow in reused chunks queue */
 #define REUSED_QUEUE_MAX 16
 

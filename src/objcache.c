@@ -141,7 +141,7 @@ lt_objcache_create (size_t elt_size)
 	assert (new != NULL);
 
 	new->elt_size = elt_size;
-	new->page_size = getpagesize ();
+	new->page_size = 4 * getpagesize ();
 	assert (new->page_size > elt_size + sizeof (struct lt_objcache_page) + sizeof (void *));
 
 	new->first_page = lt_objcache_newpage (new->page_size, elt_size);

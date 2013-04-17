@@ -259,7 +259,7 @@ main (int argc, char **argv)
 	syscalls_test ();
 	/* Start a simple tests */
 	assert (ltproto_switch_allocator ("system allocator") != -1);
-	perform_allocator_test ("system", 10240, test_chunk_linear);
+	perform_allocator_test ("system", 10240, test_chunk_circular);
 	assert (ltproto_switch_allocator ("linear allocator") != -1);
 	perform_allocator_test ("linear", 10240, test_chunk_circular);
 	//perform_module_test_simple ("null");
