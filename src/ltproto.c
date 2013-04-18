@@ -137,6 +137,7 @@ ltproto_socket (void *module, struct ltproto_socket **psk)
 		return -1;
 	}
 
+	sk->mod = mod;
 	sk->tcp_fd = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sk->tcp_fd == -1) {
 		mod->mod->module_close_func (mod->ctx, sk);
@@ -234,6 +235,7 @@ ltproto_accept (struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *add
 		ask = sk->mod->mod->module_accept_func (sk->mod->ctx, sk, addr, addrlen);
 		if (ask != NULL) {
 			ask->tcp_fd = tcp_fd;
+			ask->mod = sk->mod;
 			return ask;
 		}
 		else {

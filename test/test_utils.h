@@ -37,14 +37,14 @@ void start_test_time (void **time_data);
  * @param time_data opaque data that is used and deallocated internally
  * @return time in nanoseconds
  */
-time_t end_test_time (void *time_data);
+uint64_t end_test_time (void *time_data);
 
 /**
  * Convert time to the nearest available double value according to clock resolution
  * @param nanoseconds input nanoseconds
  * @return milliseconds with fractional part
  */
-double round_test_time (time_t nanoseconds);
+double round_test_time (uint64_t nanoseconds);
 
 /**
  * Fork server

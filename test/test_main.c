@@ -58,7 +58,7 @@ perform_module_test_simple (const char *mname)
 {
 	pid_t spid;
 	void *tdata, *mod;
-	time_t msec;
+	uint64_t msec;
 
 	printf ("Test for module: %s\n", mname);
 	fflush (stdout);
@@ -120,7 +120,7 @@ perform_allocator_test (const char *name, int num_chunks, alloc_test_func test_f
 {
 	void **chunks;
 	void *tdata;
-	time_t msec;
+	uint64_t msec;
 
 	chunks = calloc (num_chunks, sizeof (void *));
 	printf ("Test for `%s' allocator\n", name);
@@ -166,7 +166,7 @@ syscalls_test (void)
 {
 	void *tdata;
 	u_char *map;
-	time_t msec;
+	uint64_t msec;
 	key_t key;
 	int fd, i, len, pages = 1024, psize = getpagesize (), shmid;
 	struct shmid_ds shm_ds;

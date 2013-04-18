@@ -44,6 +44,11 @@ struct lt_objcache* lt_objcache_create (size_t elt_size);
  */
 void* lt_objcache_alloc (struct lt_objcache *cache);
 /**
+ * Allocate element of elt_size form cache and zero memory
+ * @param cache cache object
+ */
+void* lt_objcache_alloc0 (struct lt_objcache *cache);
+/**
  * Free element from cache
  * @param cache cache object
  * @param addr address to free

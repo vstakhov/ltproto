@@ -110,7 +110,7 @@ struct ltproto_socket_udp {
 		struct {
 			struct ltproto_socket_udp *accepted_sk; // Hash of accepted sockets
 #ifndef THREAD_UNSAFE
-			pthread_mutex_t acept_lock;
+			pthread_mutex_t accept_lock;
 #endif
 		} listen_sock;
 	} common;
@@ -185,11 +185,11 @@ udp_shmem_enqueue_command (struct ltproto_socket_udp *usk, struct ltproto_udp_co
 		case SHMEM_UDP_CMD_FIN:
 			/* Try to find appropriate socket */
 #ifndef THREAD_SAFE
-			pthread_mutex_lock (&usk->common.listen_sock.acept_lock);
+			pthread_mutex_lock (&usk->common.listen_sock.accept_lock);
 #endif
 			HASH_FIND_INT (usk->common.listen_sock.accepted_sk, &cmd->payload.data.conn_cookie, sk_found);
 #ifndef THREAD_SAFE
-			pthread_mutex_unlock (&usk->common.listen_sock.acept_lock);
+			pthread_mutex_unlock (&usk->common.listen_sock.accept_lock);
 #endif
 			if (sk_found == NULL) {
 				return -1;
@@ -255,7 +255,7 @@ udp_shmem_recv_command (struct ltproto_socket_udp *usk, int *saved_errno)
 	}
 
 	/* Actually we alloc memory for the whole entry here */
-	pcmd = lt_objcache_alloc (ctx->cmd_cache);
+	pcmd = lt_objcache_alloc0 (ctx->cmd_cache);
 	assert (pcmd != NULL);
 	memcpy (&pcmd->cmd, &cmd, sizeof (cmd));
 	memcpy (&pcmd->sin, &sin, slen);
@@ -321,7 +321,7 @@ udp_shmem_init_func (struct lt_module_ctx **ctx)
 {
 	struct lt_udp_module_ctx *real_ctx;
 
-	real_ctx = calloc (1, sizeof (struct lt_module_ctx));
+	real_ctx = calloc (1, sizeof (struct lt_udp_module_ctx));
 	real_ctx->len = sizeof (struct lt_udp_module_ctx);
 	real_ctx->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_udp));
 	real_ctx->cmd_cache = lt_objcache_create (sizeof (struct ltproto_udp_command_entry));
@@ -336,7 +336,7 @@ udp_shmem_socket_func (struct lt_module_ctx *ctx)
 	struct ltproto_socket_udp *sk;
 	struct lt_udp_module_ctx *real_ctx = (struct lt_udp_module_ctx *)ctx;
 
-	sk = lt_objcache_alloc (real_ctx->sk_cache);
+	sk = lt_objcache_alloc0 (real_ctx->sk_cache);
 	assert (sk != NULL);
 	sk->fd = socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (sk->fd == -1) {
@@ -382,7 +382,7 @@ udp_shmem_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int
 	}
 	usk->state = SHMEM_UDP_STATE_LISTEN;
 #ifndef THREAD_SAFE
-	pthread_mutex_init (&usk->common.listen_sock.acept_lock, NULL);
+	pthread_mutex_init (&usk->common.listen_sock.accept_lock, NULL);
 #endif
 
 	return 0;
@@ -413,7 +413,7 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 #ifndef THREAD_UNSAFE
 		pthread_mutex_unlock (&usk->inq_lock);
 #endif
-		nsk = lt_objcache_alloc (real_ctx->sk_cache);
+		nsk = lt_objcache_alloc0 (real_ctx->sk_cache);
 		if (nsk == NULL) {
 			return NULL;
 		}
@@ -428,6 +428,7 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 		/* Make connection cookie */
 		nsk->conn_cookie = (((long)(nsk->cookie_local + cmd->cmd.payload.cookie) *
 				(nsk->cookie_local + cmd->cmd.payload.cookie + 1)) << 2) + cmd->cmd.payload.cookie;
+		memset (&lcmd, 0, sizeof (lcmd));
 		lcmd.cmd = SHMEM_UDP_CMD_CONNECT_ACK;
 		lcmd.payload.cookie = nsk->cookie_local;
 
@@ -449,11 +450,11 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 		pthread_mutex_init (&nsk->outq_lock, NULL);
 #endif
 #ifndef THREAD_SAFE
-		pthread_mutex_lock (&usk->common.listen_sock.acept_lock);
+		pthread_mutex_lock (&usk->common.listen_sock.accept_lock);
 #endif
 		HASH_ADD_INT (usk->common.listen_sock.accepted_sk, conn_cookie, nsk);
 #ifndef THREAD_SAFE
-		pthread_mutex_unlock (&usk->common.listen_sock.acept_lock);
+		pthread_mutex_unlock (&usk->common.listen_sock.accept_lock);
 #endif
 	}
 	else {
@@ -476,6 +477,7 @@ udp_shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, co
 		errno = EINVAL;
 		return -1;
 	}
+	memset (&lcmd, 0, sizeof (lcmd));
 	lcmd.cmd = SHMEM_UDP_CMD_CONNECT;
 	lcmd.payload.cookie = usk->cookie_local;
 
@@ -511,14 +513,14 @@ ssize_t
 udp_shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
-	return len;
+	return -1;
 }
 
 ssize_t
 udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
-	return len;
+	return -1;
 }
 
 int
@@ -546,14 +548,14 @@ udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 
 	if (usk->state == SHMEM_UDP_STATE_LISTEN) {
 #ifndef THREAD_SAFE
-		pthread_mutex_lock (&usk->common.listen_sock.acept_lock);
+		pthread_mutex_lock (&usk->common.listen_sock.accept_lock);
 #endif
 		/* Reset parent on all accepted sockets */
 		for(csk = usk->common.listen_sock.accepted_sk; csk != NULL; csk = csk->hh.next) {
 			csk->common.data_sock.parent = NULL;
 		}
 #ifndef THREAD_SAFE
-		pthread_mutex_unlock (&usk->common.listen_sock.acept_lock);
+		pthread_mutex_unlock (&usk->common.listen_sock.accept_lock);
 #endif
 	}
 

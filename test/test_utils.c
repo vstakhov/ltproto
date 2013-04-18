@@ -64,7 +64,7 @@ start_test_time (void **time_data)
  * @param time_data opaque data that is used and deallocated internally
  * @return time in nanoseconds
  */
-time_t
+uint64_t
 end_test_time (void *time_data)
 {
 #ifdef HAVE_CLOCK_GETTIME
@@ -72,7 +72,7 @@ end_test_time (void *time_data)
 #else
 	struct timeval *tdata_prev = time_data, tdata_cur;
 #endif
-	time_t diff;
+	uint64_t diff;
 
 	assert (time_data != NULL);
 
@@ -103,7 +103,7 @@ end_test_time (void *time_data)
  * @return milliseconds with fractional part
  */
 double
-round_test_time (time_t nanoseconds)
+round_test_time (uint64_t nanoseconds)
 {
 	int res;
 	double result;
@@ -117,7 +117,7 @@ round_test_time (time_t nanoseconds)
     clock_getres (CLOCK_REALTIME, &ts);
 # endif
 
-    res = (int)log10 (1000000000 / ts.tv_nsec);
+    res = (uint64_t)log10 (1000000000L / ts.tv_nsec);
     if (res < 0) {
         res = 0;
     }
@@ -129,7 +129,7 @@ round_test_time (time_t nanoseconds)
     res = 1;
 #endif
 
-    result = (int) (nanoseconds / pow (10, 6 - res));
+    result = (uint64_t) (nanoseconds / pow (10, 6 - res));
     result /= pow (10, res);
 
     return result;
@@ -212,6 +212,7 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
 	assert (sock != NULL);
 
 	send_buf = malloc (send_buffer_size);
+	memset (send_buf, 0xde, send_buffer_size);
 	assert (send_buf != NULL);
 
 	if (ltproto_connect (sock, (struct sockaddr *)&sin, sizeof (sin)) == -1) {

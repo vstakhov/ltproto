@@ -180,6 +180,21 @@ lt_objcache_alloc (struct lt_objcache *cache)
 	return lt_objcache_alloc_page (cache->page_size, cache->elt_size, cache->cur_page);
 }
 
+/**
+ * Allocate element of elt_size form cache and zero memory
+ * @param cache cache object
+ */
+void*
+lt_objcache_alloc0 (struct lt_objcache *cache)
+{
+	void *mem;
+
+	mem = lt_objcache_alloc (cache);
+	memset (mem, 0, cache->elt_size);
+
+	return mem;
+}
+
 #define IS_ADDR_IN_PAGE(page, pagelen, addr)								\
 	(u_char *)(addr) >= (page)->data + (page)->data_offset &&				\
 	(u_char *)(addr) < (u_char *)(page) + (uintptr_t)(pagelen) ?			\
