@@ -93,7 +93,8 @@ struct ltproto_socket_udp {
 	enum {
 		SHMEM_UDP_STATE_INIT = 0,
 		SHMEM_UDP_STATE_LISTEN,
-		SHMEM_UDP_STATE_CONNECTED
+		SHMEM_UDP_STATE_CONNECTED,
+		SHMEM_UDP_STATE_ACCEPTED
 	} state;						// State of a socket
 	u_short substate;				// Substate of individual socket to simplify state handling
 	union {
@@ -443,6 +444,8 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 			return NULL;
 		}
 
+		nsk->state = SHMEM_UDP_STATE_ACCEPTED;
+
 		TAILQ_INIT (&nsk->in_q);
 		TAILQ_INIT (&nsk->out_q);
 #ifndef THREAD_SAFE
@@ -557,6 +560,19 @@ udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 #ifndef THREAD_SAFE
 		pthread_mutex_unlock (&usk->common.listen_sock.accept_lock);
 #endif
+	}
+	else if (usk->state == SHMEM_UDP_STATE_ACCEPTED) {
+		/* Remove from listen hash */
+		if (usk->common.data_sock.parent != NULL) {
+			csk = usk->common.data_sock.parent;
+#ifndef THREAD_SAFE
+			pthread_mutex_lock (&csk->common.listen_sock.accept_lock);
+#endif
+			HASH_DEL(csk->common.listen_sock.accepted_sk, usk);
+#ifndef THREAD_SAFE
+			pthread_mutex_unlock (&csk->common.listen_sock.accept_lock);
+#endif
+		}
 	}
 
 	ret = close (sk->fd);
