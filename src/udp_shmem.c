@@ -74,8 +74,7 @@ struct ltproto_udp_command {
 		uint32_t cookie;			// Initialization cookie
 		struct {
 			uint32_t conn_cookie;	// Connection cookie
-			uint32_t seqno;			// Sequence number
-			uint32_t seglen;		// Segment length
+			struct lt_alloc_tag tag;
 		} data;
 	} payload;
 };
@@ -107,6 +106,7 @@ struct ltproto_socket_udp {
 			} pipe;
 
 			struct ltproto_socket_udp *parent;		// Parent socket
+			struct sockaddr_in peer_addr;			// Connected peer
 		} data_sock;
 		struct {
 			struct ltproto_socket_udp *accepted_sk; // Hash of accepted sockets
@@ -424,7 +424,7 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 			return NULL;
 		}
 		nsk->common.data_sock.parent = usk;
-		nsk->cookie_local =  get_random_int (ctx->lib_ctx->prng);
+		nsk->cookie_local = get_random_int (ctx->lib_ctx->prng);
 
 		/* Make connection cookie */
 		nsk->conn_cookie = (((long)(nsk->cookie_local + cmd->cmd.payload.cookie) *
@@ -432,7 +432,7 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 		memset (&lcmd, 0, sizeof (lcmd));
 		lcmd.cmd = SHMEM_UDP_CMD_CONNECT_ACK;
 		lcmd.payload.cookie = nsk->cookie_local;
-
+		memcpy (&nsk->common.data_sock.peer_addr, &cmd->sin, sizeof(cmd->sin));
 		memcpy (addr, &cmd->sin, MIN (sizeof (cmd->sin), *addrlen));
 		*addrlen = sizeof (cmd->sin);
 
@@ -516,6 +516,13 @@ ssize_t
 udp_shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
+
+	if (usk->state != SHMEM_UDP_STATE_CONNECTED &&
+			usk->state != SHMEM_UDP_STATE_ACCEPTED) {
+		/* Do not allow not connected sockets */
+		errno = EINVAL;
+		return -1;
+	}
 	return -1;
 }
 
@@ -523,6 +530,29 @@ ssize_t
 udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
+	struct ltproto_udp_command lcmd;
+	u_char *shared_data;
+
+	if (usk->state != SHMEM_UDP_STATE_CONNECTED &&
+			usk->state != SHMEM_UDP_STATE_ACCEPTED) {
+		/* Do not allow not connected sockets */
+		errno = EINVAL;
+		return -1;
+	}
+	lcmd.cmd = SHMEM_UDP_CMD_SEND;
+	lcmd.payload.cookie = usk->conn_cookie;
+	shared_data = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
+			len, &lcmd.payload.data.tag);
+	if (shared_data == NULL) {
+		errno = EAGAIN;
+		return -1;
+	}
+
+	if (sendto (usk->fd, &lcmd, sizeof (lcmd), 0,
+			(struct sockaddr *)&usk->common.data_sock.peer_addr,
+			sizeof (struct sockaddr_in)) == -1) {
+		return -1;
+	}
 	return -1;
 }
 
@@ -534,13 +564,13 @@ udp_shmem_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, sho
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
 
 	pfd.events = what;
-	pfd.fd = sk->fd;
+	pfd.fd = usk->fd;
 
 	if (tv != NULL) {
 		msec = tv_to_msec (tv);
 	}
 
-	return 1;
+	return poll (&pfd, 1, msec);
 }
 
 int
