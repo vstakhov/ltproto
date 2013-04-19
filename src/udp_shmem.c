@@ -88,6 +88,7 @@ struct ltproto_udp_command_entry {
 
 struct ltproto_socket_udp {
 	int fd;							// Socket descriptor
+	int tcp_fd;						// TCP link socket
 	struct ltproto_module *mod;		// Module handling this socket
 	UT_hash_handle hh;				// Hash entry
 	enum {
