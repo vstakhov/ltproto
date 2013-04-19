@@ -63,9 +63,9 @@ lt_objcache_newpage (size_t page_size, size_t elt_size)
 	new->next = NULL;
 
 	/* Set empty bitmap */
-	nelts = (page_size - sizeof (struct lt_objcache_page)) / elt_size;
+	nelts = ceil ((page_size - sizeof (struct lt_objcache_page)) / (double)elt_size);
 	bmap_len = NBYTES(nelts);
-	nelts -= ceil (bmap_len / elt_size);
+	nelts -= ceil ((double)bmap_len / (double)elt_size);
 	new->data_offset = bmap_len;
 	new->cur_elts = 0;
 	new->max_elts = nelts;

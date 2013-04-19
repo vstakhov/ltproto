@@ -100,14 +100,13 @@ null_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const stru
 {
 	int reuseaddr = 1;
 
-	setsockopt (sk->fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof (int));
-	return bind (sk->fd, addr, addrlen);
+	return 0;
 }
 
 int
 null_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog)
 {
-	return listen (sk->fd, backlog);
+	return 0;
 }
 
 struct ltproto_socket *
@@ -116,7 +115,7 @@ null_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct s
 	struct ltproto_socket *nsk;
 	int afd;
 
-	afd = accept (sk->fd, addr, addrlen);
+	afd = dup (sk->fd);
 	if (afd == -1) {
 		return NULL;
 	}
@@ -131,19 +130,21 @@ null_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct s
 int
 null_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
-	return connect (sk->fd, addr, addrlen);
+	return 0;
 }
 
 ssize_t
 null_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len)
 {
-	return read (sk->fd, buf, len);
+	/* Force TCP connection */
+	return -1;
 }
 
 ssize_t
 null_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len)
 {
-	return write (sk->fd, buf, len);
+	/* Force TCP connection */
+	return -1;
 }
 
 int

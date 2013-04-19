@@ -71,10 +71,11 @@ struct ltproto_udp_command {
 		SHMEM_UDP_CMD_FIN			// Finalise connection
 	} cmd;
 	union {
-		uint32_t cookie;			// Initialization cookie
+		uint32_t cookie;				// Initialization cookie
 		struct {
-			uint32_t conn_cookie;	// Connection cookie
-			struct lt_alloc_tag tag;
+			uint32_t conn_cookie;		// Connection cookie
+			struct lt_alloc_tag tag;	// Data tag
+			uint32_t len;				// Data length
 		} data;
 	} payload;
 };
@@ -199,7 +200,8 @@ udp_shmem_enqueue_command (struct ltproto_socket_udp *usk, struct ltproto_udp_co
 			break;
 		}
 	}
-	else if (usk->state == SHMEM_UDP_STATE_CONNECTED) {
+	else if (usk->state == SHMEM_UDP_STATE_CONNECTED ||
+			usk->state == SHMEM_UDP_STATE_ACCEPTED) {
 		switch (cmd->cmd) {
 		case SHMEM_UDP_CMD_CONNECT:
 			/* Enqueue to parent socket */
@@ -276,6 +278,7 @@ udp_shmem_expect_command (struct ltproto_socket_udp *usk, u_int cmd, int *saved_
 {
 	struct ltproto_udp_command_entry *cur;
 	struct ltproto_udp_command *res;
+	struct lt_udp_module_ctx *ctx = (struct lt_udp_module_ctx *)usk->mod->ctx;
 
 	/* Check queue first */
 #ifndef THREAD_UNSAFE
@@ -300,7 +303,7 @@ udp_shmem_expect_command (struct ltproto_socket_udp *usk, u_int cmd, int *saved_
 		if (udp_shmem_enqueue_command (usk, res) == -1) {
 			if (res->cmd == cmd) {
 				*saved_errno = EINVAL;
-				free (res);
+				lt_objcache_free (ctx->sk_cache, res);
 				return NULL;
 			}
 		}
@@ -448,6 +451,8 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 
 		TAILQ_INIT (&nsk->in_q);
 		TAILQ_INIT (&nsk->out_q);
+
+		lt_objcache_free (real_ctx->cmd_cache, cmd);
 #ifndef THREAD_SAFE
 		pthread_mutex_init (&nsk->inq_lock, NULL);
 		pthread_mutex_init (&nsk->outq_lock, NULL);
@@ -468,11 +473,13 @@ udp_shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, str
 }
 
 int
-udp_shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
+udp_shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
+		const struct sockaddr *addr, socklen_t addrlen)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
 	struct ltproto_udp_command lcmd;
 	struct ltproto_udp_command_entry *cmd;
+	struct lt_udp_module_ctx *real_ctx = (struct lt_udp_module_ctx *)ctx;
 	int serrno;
 
 	if (usk->state != SHMEM_UDP_STATE_INIT) {
@@ -491,17 +498,19 @@ udp_shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, co
 	usk->state = SHMEM_UDP_STATE_CONNECTED;
 	cmd = udp_shmem_expect_command (usk, SHMEM_UDP_CMD_CONNECT_ACK, &serrno);
 	if (cmd != NULL) {
-			/* We have initial syn packet, so we can setup socket */
+		/* We have initial syn packet, so we can setup socket */
 #ifndef THREAD_UNSAFE
-			pthread_mutex_lock (&usk->inq_lock);
+		pthread_mutex_lock (&usk->inq_lock);
 #endif
-			TAILQ_REMOVE (&usk->in_q, cmd, link);
+		TAILQ_REMOVE (&usk->in_q, cmd, link);
 #ifndef THREAD_UNSAFE
-			pthread_mutex_unlock (&usk->inq_lock);
+		pthread_mutex_unlock (&usk->inq_lock);
 #endif
-			/* Make connection cookie */
-			usk->conn_cookie = (((long)(usk->cookie_local + cmd->cmd.payload.cookie) *
-					(usk->cookie_local + cmd->cmd.payload.cookie + 1)) << 2) + cmd->cmd.payload.cookie;
+		/* Make connection cookie */
+		usk->conn_cookie = (((long)(usk->cookie_local + cmd->cmd.payload.cookie) *
+				(usk->cookie_local + cmd->cmd.payload.cookie + 1)) << 2) + cmd->cmd.payload.cookie;
+		memcpy (&usk->common.data_sock.peer_addr, addr, sizeof(struct sockaddr_in));
+		lt_objcache_free (real_ctx->cmd_cache, cmd);
 	}
 	else {
 		usk->state = SHMEM_UDP_STATE_INIT;
@@ -516,6 +525,11 @@ ssize_t
 udp_shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
+	struct ltproto_udp_command_entry *cmd;
+	struct ltproto_udp_command lcmd;
+	struct lt_udp_module_ctx *real_ctx = (struct lt_udp_module_ctx *)ctx;
+	int serrno;
+	void *mem;
 
 	if (usk->state != SHMEM_UDP_STATE_CONNECTED &&
 			usk->state != SHMEM_UDP_STATE_ACCEPTED) {
@@ -523,6 +537,43 @@ udp_shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void 
 		errno = EINVAL;
 		return -1;
 	}
+
+recv_more:
+	cmd = udp_shmem_expect_command (usk, SHMEM_UDP_CMD_SEND, &serrno);
+	if (cmd != NULL) {
+#ifndef THREAD_UNSAFE
+		pthread_mutex_lock (&usk->inq_lock);
+#endif
+		TAILQ_REMOVE (&usk->in_q, cmd, link);
+#ifndef THREAD_UNSAFE
+		pthread_mutex_unlock (&usk->inq_lock);
+#endif
+		/* XXX: Check cookie */
+
+		/* We have send request pending */
+		mem = real_ctx->lib_ctx->allocator->allocator_attachtag_func (real_ctx->lib_ctx->alloc_ctx,
+				&cmd->cmd.payload.data.tag);
+		if (mem == NULL) {
+			/* Cannot attach memory for some reason */
+			serrno = EINVAL;
+			lt_objcache_free (real_ctx->cmd_cache, cmd);
+		}
+		else {
+			/* XXX: just copy buffer assuming local and remote sizes are equal */
+			memcpy (buf, mem, len);
+			lcmd.cmd = SHMEM_UDP_CMD_ACK;
+			lcmd.payload.cookie = usk->conn_cookie;
+			if (sendto (usk->fd, &lcmd, sizeof (lcmd), 0,
+					(struct sockaddr *)&usk->common.data_sock.peer_addr,
+					sizeof (struct sockaddr_in)) == -1) {
+				return -1;
+			}
+			lt_objcache_free (real_ctx->cmd_cache, cmd);
+			return len;
+		}
+	}
+
+	errno = serrno;
 	return -1;
 }
 
@@ -531,7 +582,10 @@ udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, cons
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
 	struct ltproto_udp_command lcmd;
+	struct ltproto_udp_command_entry *cmd;
 	u_char *shared_data;
+	struct lt_udp_module_ctx *real_ctx = (struct lt_udp_module_ctx *)ctx;
+	int serrno;
 
 	if (usk->state != SHMEM_UDP_STATE_CONNECTED &&
 			usk->state != SHMEM_UDP_STATE_ACCEPTED) {
@@ -541,17 +595,33 @@ udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, cons
 	}
 	lcmd.cmd = SHMEM_UDP_CMD_SEND;
 	lcmd.payload.cookie = usk->conn_cookie;
-	shared_data = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
+	shared_data = real_ctx->lib_ctx->allocator->allocator_alloc_func (real_ctx->lib_ctx->alloc_ctx,
 			len, &lcmd.payload.data.tag);
 	if (shared_data == NULL) {
 		errno = EAGAIN;
 		return -1;
 	}
+	lcmd.payload.data.len = len;
 
 	if (sendto (usk->fd, &lcmd, sizeof (lcmd), 0,
 			(struct sockaddr *)&usk->common.data_sock.peer_addr,
 			sizeof (struct sockaddr_in)) == -1) {
 		return -1;
+	}
+	cmd = udp_shmem_expect_command (usk, SHMEM_UDP_CMD_ACK, &serrno);
+	if (cmd != NULL) {
+#ifndef THREAD_UNSAFE
+		pthread_mutex_lock (&usk->inq_lock);
+#endif
+		TAILQ_REMOVE (&usk->in_q, cmd, link);
+#ifndef THREAD_UNSAFE
+		pthread_mutex_unlock (&usk->inq_lock);
+#endif
+		/* XXX: Check cookie */
+		real_ctx->lib_ctx->allocator->allocator_free_func (real_ctx->lib_ctx->alloc_ctx,
+				shared_data, len);
+		lt_objcache_free (real_ctx->cmd_cache, cmd);
+		return len;
 	}
 	return -1;
 }

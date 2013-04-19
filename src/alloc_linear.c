@@ -409,7 +409,7 @@ linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_ta
 	chunk = find_free_chunk (real_ctx, size, &ar);
 	if (chunk != NULL && ar != NULL) {
 		tag->seq = ar->tag.seq;
-		tag->id = chunk->base;
+		tag->id = chunk->base - ar->begin;
 		return (void *)chunk->base;
 	}
 
@@ -421,7 +421,7 @@ linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_ta
 	chunk = find_free_chunk (real_ctx, size, &ar);
 	if (chunk != NULL) {
 		tag->seq = ar->tag.seq;
-		tag->id = chunk->base;
+		tag->id = chunk->base - ar->begin;
 		return (void *)chunk->base;
 	}
 
@@ -440,7 +440,7 @@ linear_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag)
 	void *map;
 	int fd;
 
-	HASH_FIND(hh, real_ctx->attached_arenas, &tag->seq, sizeof(tag->seq), far);
+	HASH_FIND (hh, real_ctx->attached_arenas, &tag->seq, sizeof(tag->seq), far);
 
 	if (far != NULL) {
 		assert (tag->id < far->len);
@@ -459,7 +459,7 @@ linear_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag)
 			return NULL;
 		}
 
-		if ((map = mmap (NULL, st.st_size, PROT_READ, 0, fd, 0)) == MAP_FAILED) {
+		if ((map = mmap (NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED) {
 			close (fd);
 			return NULL;
 		}

@@ -67,15 +67,16 @@ perform_module_test_simple (const char *mname)
 	assert (spid != -1);
 	wait_for_server ();
 	start_test_time (&tdata);
-	assert (do_client (50009, 8 * 1024 * 1024, 1024, mod) != -1);
+	assert (do_client (50009, 1024 * 1024, 8*  1024, mod) != -1);
 	msec = end_test_time (tdata);
-	printf ("Send buffer: 8Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
+	printf ("Send buffer: 1Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
 
+#if 0
 	start_test_time (&tdata);
 	assert (do_client (50009, 4 * 1024 * 1024, 2048, mod) != -1);
 	msec = end_test_time (tdata);
-	printf ("Send buffer: 4Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
-
+	printf ("Send buffer: 4Mb, Recv buffer: 4Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
+#endif
 	kill (spid, SIGTERM);
 }
 
@@ -262,7 +263,7 @@ main (int argc, char **argv)
 	perform_allocator_test ("system", 10240, test_chunk_circular);
 	assert (ltproto_switch_allocator ("linear allocator") != -1);
 	perform_allocator_test ("linear", 10240, test_chunk_circular);
-	//perform_module_test_simple ("null");
+	perform_module_test_simple ("null");
 	perform_module_test_simple ("udp-shmem");
 
 	ltproto_destroy ();
