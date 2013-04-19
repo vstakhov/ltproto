@@ -64,11 +64,11 @@
  */
 struct ltproto_udp_command {
 	enum {
-		SHMEM_UDP_CMD_CONNECT = 0,		// Connect to listening socket
-		SHMEM_UDP_CMD_CONNECT_ACK,	// Acknowledgement of a connection
-		SHMEM_UDP_CMD_SEND,			// Send data command
-		SHMEM_UDP_CMD_ACK,			// Acknowledgement of sending
-		SHMEM_UDP_CMD_FIN			// Finalise connection
+		SHMEM_UDP_CMD_CONNECT = 0x1,			// Connect to listening socket
+		SHMEM_UDP_CMD_CONNECT_ACK = 0x1 << 1,	// Acknowledgement of a connection
+		SHMEM_UDP_CMD_SEND = 0x1 << 2,			// Send data command
+		SHMEM_UDP_CMD_ACK = 0x1 << 3,			// Acknowledgement of sending
+		SHMEM_UDP_CMD_FIN = 0x1 << 4			// Finalise connection
 	} cmd;
 	union {
 		uint32_t cookie;				// Initialization cookie
@@ -286,7 +286,7 @@ udp_shmem_expect_command (struct ltproto_socket_udp *usk, u_int cmd, int *saved_
 	pthread_mutex_lock (&usk->inq_lock);
 #endif
 	TAILQ_FOREACH (cur, &usk->in_q, link) {
-		if (cur->cmd.cmd == cmd) {
+		if (cur->cmd.cmd & cmd) {
 #ifndef THREAD_UNSAFE
 			pthread_mutex_unlock (&usk->inq_lock);
 #endif
@@ -298,6 +298,9 @@ udp_shmem_expect_command (struct ltproto_socket_udp *usk, u_int cmd, int *saved_
 		/* We got nothing, so try to accept data */
 		res = udp_shmem_recv_command (usk, saved_errno);
 		if (res == NULL) {
+#ifndef THREAD_UNSAFE
+			pthread_mutex_unlock (&usk->inq_lock);
+#endif
 			return NULL;
 		}
 
@@ -305,11 +308,14 @@ udp_shmem_expect_command (struct ltproto_socket_udp *usk, u_int cmd, int *saved_
 			if (res->cmd == cmd) {
 				*saved_errno = EINVAL;
 				lt_objcache_free (ctx->sk_cache, res);
+#ifndef THREAD_UNSAFE
+				pthread_mutex_unlock (&usk->inq_lock);
+#endif
 				return NULL;
 			}
 		}
 
-		if (res->cmd == cmd) {
+		if (res->cmd & cmd) {
 #ifndef THREAD_UNSAFE
 			pthread_mutex_unlock (&usk->inq_lock);
 #endif
@@ -497,7 +503,7 @@ udp_shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
 	}
 	/* Wait for ACK */
 	usk->state = SHMEM_UDP_STATE_CONNECTED;
-	cmd = udp_shmem_expect_command (usk, SHMEM_UDP_CMD_CONNECT_ACK, &serrno);
+	cmd = udp_shmem_expect_command (usk, SHMEM_UDP_CMD_CONNECT_ACK | SHMEM_UDP_CMD_FIN, &serrno);
 	if (cmd != NULL) {
 		/* We have initial syn packet, so we can setup socket */
 #ifndef THREAD_UNSAFE
@@ -507,10 +513,19 @@ udp_shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
 #ifndef THREAD_UNSAFE
 		pthread_mutex_unlock (&usk->inq_lock);
 #endif
-		/* Make connection cookie */
-		usk->conn_cookie = (((long)(usk->cookie_local + cmd->cmd.payload.cookie) *
-				(usk->cookie_local + cmd->cmd.payload.cookie + 1)) << 2) + cmd->cmd.payload.cookie;
-		memcpy (&usk->common.data_sock.peer_addr, addr, sizeof(struct sockaddr_in));
+		if (cmd->cmd.cmd == SHMEM_UDP_CMD_CONNECT_ACK) {
+			/* Make connection cookie */
+			usk->conn_cookie = (((long)(usk->cookie_local + cmd->cmd.payload.cookie) *
+					(usk->cookie_local + cmd->cmd.payload.cookie + 1)) << 2) + cmd->cmd.payload.cookie;
+			memcpy (&usk->common.data_sock.peer_addr, addr, sizeof(struct sockaddr_in));
+		}
+		else {
+			/* Connection has been reset */
+			errno = ECONNABORTED;
+			usk->state = SHMEM_UDP_STATE_INIT;
+			lt_objcache_free (real_ctx->cmd_cache, cmd);
+			return -1;
+		}
 		lt_objcache_free (real_ctx->cmd_cache, cmd);
 	}
 	else {
@@ -540,7 +555,7 @@ udp_shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void 
 	}
 
 recv_more:
-	cmd = udp_shmem_expect_command (usk, SHMEM_UDP_CMD_SEND, &serrno);
+	cmd = udp_shmem_expect_command (usk, SHMEM_UDP_CMD_SEND | SHMEM_UDP_CMD_FIN, &serrno);
 	if (cmd != NULL) {
 #ifndef THREAD_UNSAFE
 		pthread_mutex_lock (&usk->inq_lock);
@@ -551,26 +566,33 @@ recv_more:
 #endif
 		/* XXX: Check cookie */
 
-		/* We have send request pending */
-		mem = real_ctx->lib_ctx->allocator->allocator_attachtag_func (real_ctx->lib_ctx->alloc_ctx,
-				&cmd->cmd.payload.data.tag);
-		if (mem == NULL) {
-			/* Cannot attach memory for some reason */
-			serrno = EINVAL;
+		if (cmd->cmd.cmd == SHMEM_UDP_CMD_FIN) {
+			/* Connection has been closed */
 			lt_objcache_free (real_ctx->cmd_cache, cmd);
+			return 0;
 		}
 		else {
-			/* XXX: just copy buffer assuming local and remote sizes are equal */
-			memcpy (buf, mem, len);
-			lcmd.cmd = SHMEM_UDP_CMD_ACK;
-			lcmd.payload.cookie = usk->conn_cookie;
-			if (sendto (usk->fd, &lcmd, sizeof (lcmd), 0,
-					(struct sockaddr *)&usk->common.data_sock.peer_addr,
-					sizeof (struct sockaddr_in)) == -1) {
-				return -1;
+			/* We have send request pending */
+			mem = real_ctx->lib_ctx->allocator->allocator_attachtag_func (real_ctx->lib_ctx->alloc_ctx,
+					&cmd->cmd.payload.data.tag);
+			if (mem == NULL) {
+				/* Cannot attach memory for some reason */
+				serrno = EINVAL;
+				lt_objcache_free (real_ctx->cmd_cache, cmd);
 			}
-			lt_objcache_free (real_ctx->cmd_cache, cmd);
-			return len;
+			else {
+				/* XXX: just copy buffer assuming local and remote sizes are equal */
+				memcpy (buf, mem, len);
+				lcmd.cmd = SHMEM_UDP_CMD_ACK;
+				lcmd.payload.cookie = usk->conn_cookie;
+				if (sendto (usk->fd, &lcmd, sizeof (lcmd), 0,
+						(struct sockaddr *)&usk->common.data_sock.peer_addr,
+						sizeof (struct sockaddr_in)) == -1) {
+					return -1;
+				}
+				lt_objcache_free (real_ctx->cmd_cache, cmd);
+				return len;
+			}
 		}
 	}
 
@@ -648,7 +670,8 @@ int
 udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk, *csk;
-	int serrno, ret;
+	int serrno = 0, ret;
+	struct ltproto_udp_command lcmd;
 
 	if (usk->state == SHMEM_UDP_STATE_LISTEN) {
 #ifndef THREAD_SAFE
@@ -675,9 +698,18 @@ udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 #endif
 		}
 	}
+	else if (usk->state == SHMEM_UDP_STATE_CONNECTED) {
+		/* Send fin command */
+		lcmd.cmd = SHMEM_UDP_CMD_FIN;
+		lcmd.payload.cookie = usk->conn_cookie;
+		if (sendto (usk->fd, &lcmd, sizeof (lcmd), 0,
+				(struct sockaddr *)&usk->common.data_sock.peer_addr,
+				sizeof (struct sockaddr_in)) == -1) {
+			serrno = errno;
+		}
+	}
 
 	ret = close (sk->fd);
-	serrno = errno;
 	lt_objcache_free (ctx->sk_cache, sk);
 	errno = serrno;
 

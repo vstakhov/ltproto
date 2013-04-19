@@ -49,7 +49,7 @@ start_test_time (void **time_data)
 # ifdef HAVE_CLOCK_MONOTONIC_RAW
 	assert (clock_gettime (CLOCK_MONOTONIC_RAW, tdata) == 0);
 # elif defined(HAVE_CLOCK_REALTIME_PRECISE)
-	assert (clock_gettime (CLOCK_REALTIME_PRECISE, &tdata_cur) == 0);
+	assert (clock_gettime (CLOCK_REALTIME_PRECISE, tdata) == 0);
 # else
 	assert (clock_gettime (CLOCK_REALTIME, tdata) == 0);
 # endif
@@ -105,7 +105,7 @@ end_test_time (void *time_data)
 double
 round_test_time (uint64_t nanoseconds)
 {
-	int res;
+	int64_t res;
 	double result;
 #ifdef HAVE_CLOCK_GETTIME
 	struct timespec ts;
@@ -117,7 +117,7 @@ round_test_time (uint64_t nanoseconds)
     clock_getres (CLOCK_REALTIME, &ts);
 # endif
 
-    res = (uint64_t)log10 (1000000000L / ts.tv_nsec);
+    res = (int64_t)log10 (1000000000L / ts.tv_nsec);
     if (res < 0) {
         res = 0;
     }
