@@ -50,7 +50,7 @@ int64_t get_random_seq (void *data);
  */
 int get_random_int (void *data);
 
-#define MEM_ALIGNMENT   sizeof(unsigned long)    /* platform word */
+#define MEM_ALIGNMENT   16    /* sse optimization */
 #define align_ptr(p, a)                                                   \
     (uintptr_t) (((uintptr_t) (p) + ((uintptr_t) a - 1)) & ~((uintptr_t) a - 1))
 #define align_ptr_platform(p)                                                   \

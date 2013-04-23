@@ -152,10 +152,10 @@ pid_t
 fork_server (u_short port, u_int recv_buffer_size, void *mod)
 {
 	pid_t pid;
-	struct ltproto_socket *sock, *conn;
+	struct ltproto_socket *sock, *conn = NULL;
 	struct sockaddr_in sin;
 	socklen_t slen = sizeof (struct sockaddr_in);
-	u_char *recv_buf;
+	void *recv_buf;
 	sigset_t sigmask;
 	struct sigaction sa;
 
@@ -185,7 +185,7 @@ do_client:
 	sin.sin_port = htons (port);
 	sin.sin_addr.s_addr = INADDR_ANY;
 
-	recv_buf = malloc (recv_buffer_size);
+	assert (posix_memalign (&recv_buf, 16, recv_buffer_size) == 0);
 	assert (recv_buf != NULL);
 
 	assert (ltproto_bind (sock, (struct sockaddr *)&sin, slen) != -1);
@@ -227,7 +227,7 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
 	struct ltproto_socket *sock;
 	u_int i;
 	struct sockaddr_in sin;
-	u_char *send_buf;
+	void *send_buf;
 
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons (port);
@@ -236,9 +236,9 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
 	assert (ltproto_socket (mod, &sock) != -1);
 	assert (sock != NULL);
 
-	send_buf = malloc (send_buffer_size);
-	memset (send_buf, 0xde, send_buffer_size);
+	assert (posix_memalign (&send_buf, 16, send_buffer_size) == 0);
 	assert (send_buf != NULL);
+	memset (send_buf, 0xde, send_buffer_size);
 
 	if (ltproto_connect (sock, (struct sockaddr *)&sin, sizeof (sin)) == -1) {
 		perror ("connect failed");

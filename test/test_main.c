@@ -59,15 +59,17 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	pid_t spid;
 	void *tdata, *mod;
 	uint64_t msec;
+	short port;
 
 	printf ("Test for module: %s\n", mname);
 	fflush (stdout);
+	port = rand ();
 	mod = ltproto_select_module (mname);
-	spid = fork_server (50009, buflen, mod);
+	spid = fork_server (port, buflen, mod);
 	assert (spid != -1);
 	wait_for_server ();
 	start_test_time (&tdata);
-	assert (do_client (50009, buflen, bytes / (uint64_t)buflen, mod) != -1);
+	assert (do_client (port, buflen, bytes / (uint64_t)buflen, mod) != -1);
 	msec = end_test_time (tdata);
 	printf ("Send buffer: %s, ", print_bytes (buflen));
 	printf ("Recv buffer: %s; ", print_bytes (buflen));
