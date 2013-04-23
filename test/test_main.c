@@ -244,12 +244,51 @@ syscalls_test (void)
 	printf ("shmctl: %lu nanoseconds\n", msec);
 }
 
+static void
+usage (void)
+{
+	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-h]\n");
+	exit (EXIT_FAILURE);
+}
+
+static int
+parse_opt_number (const char *opt, uint64_t *dest)
+{
+	char *errstr;
+	uint64_t var;
+
+	var = strtoul (opt, &errstr, 10);
+	if (errstr != NULL && *errstr != '\0')  {
+		switch (*errstr) {
+		case 'G':
+		case 'g':
+			var <<= 10;
+			// Go down
+		case 'M':
+		case 'm':
+			var <<= 10;
+			// Go down
+		case 'k':
+		case 'K':
+			var <<= 10;
+			break;
+		default:
+			return -1;
+		}
+	}
+	*dest = var;
+
+	return 0;
+}
+
 int
 main (int argc, char **argv)
 {
 	sigset_t sigmask;
 	struct sigaction sa;
 	unsigned long buflen = 1024 * 1024;
+	uint64_t bytes = 8589934592ULL;
+	char c;
 
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
@@ -258,9 +297,36 @@ main (int argc, char **argv)
 	sa.sa_handler = usr1_handler;
 	sigaction (SIGUSR1, &sa, NULL);
 
-	if (argc > 1) {
-		buflen = strtoul (argv[1], NULL, 10);
+	while ((c = getopt (argc, argv, "b:s:h")) != -1) {
+		switch(c) {
+		case 'b':
+			if (optarg) {
+				if (parse_opt_number (optarg, &buflen) == -1) {
+					usage ();
+				}
+			}
+			else {
+				usage ();
+			}
+			break;
+		case 's':
+			if (optarg) {
+				if (parse_opt_number (optarg, &bytes) == -1) {
+					usage ();
+				}
+			}
+			else {
+				usage ();
+			}
+			break;
+		default:
+			usage ();
+			break;
+		}
 	}
+
+	argc -= optind;
+	argv -= optind;
 
 	ltproto_init ();
 
@@ -270,8 +336,8 @@ main (int argc, char **argv)
 	perform_allocator_test ("system", 10240, test_chunk_circular);
 	assert (ltproto_switch_allocator ("linear allocator") != -1);
 	perform_allocator_test ("linear", 10240, test_chunk_circular);
-	perform_module_test_simple ("null", buflen, 8589934592ULL);
-	perform_module_test_simple ("udp-shmem", buflen, 8589934592ULL);
+	perform_module_test_simple ("null", buflen, bytes);
+	perform_module_test_simple ("udp-shmem", buflen, bytes);
 
 	ltproto_destroy ();
 
