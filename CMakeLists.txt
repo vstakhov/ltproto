@@ -20,6 +20,7 @@ INCLUDE(FindOpenSSL)
 OPTION(ENABLE_DEBUG_MODE   "Enable debug output [default: ON]"                  ON)
 OPTION(ENABLE_OPTIMIZATION "Enable optimization [default: OFF]"                 OFF)
 OPTION(ENABLE_THREAD_UNSAFE "Enable thread unsafe build [default: OFF]"         OFF)
+OPTION(ENABLE_GPERF_TOOLS  "Enable google perftools [default: OFF]"             OFF)
 
 # List of available modules in compile time
 MACRO(AddModules MLIST)
@@ -150,6 +151,34 @@ FIND_LIBRARY(HAVE_LIBRT rt)
 IF(HAVE_LIBRT)
 	LIST(APPEND CMAKE_REQUIRED_LIBRARIES rt)
 ENDIF(HAVE_LIBRT)
+
+# Google performance tools
+
+IF(ENABLE_GPERF_TOOLS MATCHES "ON")
+	FIND_PATH(GPERF_INCLUDE google/profiler.h PATHS /opt/include
+													/usr/include
+													/usr/local/include
+											  DOC "Path where google perftools includes can be found")
+	INCLUDE_DIRECTORIES("${GPERF_INCLUDE}")
+	FIND_LIBRARY(GPERF_LIBRARY NAMES profiler PATH_SUFFIXES lib64 lib
+                  PATHS
+                      ~/Library/Frameworks
+                      /Library/Frameworks
+                      /usr/local
+                      /usr
+                      /sw
+                      /opt/local
+                      /opt/csw
+                      /opt
+					DOC "Path where the gperf library can be found")
+	IF(NOT GPERF_LIBRARY)
+		MESSAGE(FATAL_ERROR "gperf tools support is enabled but not found in system")
+	ENDIF(NOT GPERF_LIBRARY)
+	GET_FILENAME_COMPONENT(GPERF_PATH "${GPERF_LIBRARY}" PATH)
+	LINK_DIRECTORIES("${GPERF_PATH}")
+	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+	SET(WITH_GPERF_TOOLS 1)
+ENDIF(ENABLE_GPERF_TOOLS MATCHES "ON")
  
 # Check platform specific includes
 CHECK_INCLUDE_FILES(sys/types.h HAVE_SYS_TYPES_H)

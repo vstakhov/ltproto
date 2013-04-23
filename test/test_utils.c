@@ -28,6 +28,7 @@
 #include <assert.h>
 #include <math.h>
 
+sig_atomic_t got_term = 0;
 
 /**
  * Start time of some test
@@ -135,6 +136,12 @@ round_test_time (uint64_t nanoseconds)
     return result;
 }
 
+
+static void
+server_term_handler (int signo)
+{
+	got_term = 1;
+}
 /**
  * Fork server
  * @param port port to bind
@@ -149,6 +156,8 @@ fork_server (u_short port, u_int recv_buffer_size, void *mod)
 	struct sockaddr_in sin;
 	socklen_t slen = sizeof (struct sockaddr_in);
 	u_char *recv_buf;
+	sigset_t sigmask;
+	struct sigaction sa;
 
 	pid = fork ();
 
@@ -162,6 +171,13 @@ fork_server (u_short port, u_int recv_buffer_size, void *mod)
 	}
 
 do_client:
+	sigemptyset (&sigmask);
+	sigaddset (&sigmask, SIGUSR1);
+	memset (&sa, 0, sizeof (sa));
+	sa.sa_mask = sigmask;
+	sa.sa_handler = server_term_handler;
+	sigaction (SIGTERM, &sa, NULL);
+
 	assert (ltproto_socket (mod, &sock) != -1);
 	assert (sock != NULL);
 
@@ -178,14 +194,23 @@ do_client:
 	/* Tell that we are ready */
 	kill (getppid (), SIGUSR1);
 
+	gperf_profiler_init ("server");
 	do {
+		if (got_term) {
+			ltproto_close (conn);
+			break;
+		}
 		conn = ltproto_accept (sock, (struct sockaddr *)&sin, &slen);
 		while (ltproto_read (conn, recv_buf, recv_buffer_size) > 0);
 
 		ltproto_close (conn);
-	} while (conn != NULL);
+	} while (conn != NULL && !got_term);
 
-	_exit (EXIT_SUCCESS);
+
+	ltproto_close (sock);
+	gperf_profiler_stop ();
+	exit (EXIT_SUCCESS);
+
 	return 0;
 }
 
@@ -220,6 +245,7 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
 		goto err;
 	}
 
+	gperf_profiler_init ("client");
 	for (i = 0; i < repeat_count; i ++) {
 		if (ltproto_write (sock, send_buf, send_buffer_size) == -1) {
 			perror ("write failed");
@@ -227,6 +253,7 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
 		}
 	}
 
+	gperf_profiler_stop ();
 	ltproto_close (sock);
 	return 0;
 err:
@@ -258,4 +285,47 @@ print_bytes (uint64_t bytes)
 			(unsigned long)quotient % 1024, prefixes[i]);
 
 	return buf;
+}
+
+/**
+ * Init google perftools
+ * @param descr process description
+ */
+void
+gperf_profiler_init (const char *descr)
+{
+#if defined(WITH_GPERF_TOOLS)
+	char prof_path[PATH_MAX], *tmpdir;
+
+	if (getenv ("CPUPROFILE")) {
+
+		/* disable inherited Profiler enabled in master process */
+		ProfilerStop ();
+	}
+	tmpdir = getenv ("TMPDIR");
+	if (tmpdir == NULL) {
+		tmpdir = "/tmp";
+	}
+
+	snprintf (prof_path, sizeof (prof_path), "%s/ltproto-%s.%d", tmpdir, descr, (int)getpid ());
+	if (ProfilerStart (prof_path)) {
+		/* start ITIMER_PROF timer */
+		ProfilerRegisterThread ();
+	}
+	else {
+		fprintf (stderr, "Cannot start google perftools profiler\n");
+	}
+
+#endif
+}
+
+/**
+ * Stop google perftools and write everything
+ */
+void
+gperf_profiler_stop (void)
+{
+#if defined(WITH_GPERF_TOOLS)
+	ProfilerStop ();
+#endif
 }

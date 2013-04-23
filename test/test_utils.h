@@ -70,4 +70,16 @@ int do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *m
  */
 char* print_bytes (uint64_t bytes);
 
+
+/**
+ * Init google perftools
+ * @param descr process description
+ */
+void gperf_profiler_init (const char *descr);
+
+/**
+ * Stop google perftools and write everything
+ */
+void gperf_profiler_stop (void);
+
 #endif /* TEST_UTILS_H_ */

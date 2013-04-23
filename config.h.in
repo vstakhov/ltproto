@@ -44,6 +44,8 @@
 #cmakedefine HAVE_MACHINE_ENDIAN_H  1
 #cmakedefine HAVE_SYS_CDEFS_H    1
 
+#cmakedefine WITH_GPERF_TOOLS    1
+
 /* sys/types */
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
@@ -236,6 +238,10 @@
 /* math */
 #ifdef HAVE_MATH_H
 #include <math.h>
+#endif
+
+#ifdef WITH_GPERF_TOOLS
+#include <google/profiler.h>
 #endif
 
 #include <errno.h>

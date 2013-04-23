@@ -7,3 +7,6 @@ ADD_EXECUTABLE(ltproto_test ${LTPROTO_TEST_SRC})
 TARGET_LINK_LIBRARIES(ltproto_test ltproto)
 # For calculating log10
 TARGET_LINK_LIBRARIES(ltproto_test m)
+IF(ENABLE_GPERF_TOOLS MATCHES "ON")
+	TARGET_LINK_LIBRARIES(ltproto_test profiler)
+ENDIF(ENABLE_GPERF_TOOLS MATCHES "ON")
