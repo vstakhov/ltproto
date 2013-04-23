@@ -56,6 +56,8 @@
  * non-blocking IO for listening socket and accepted sockets.
  */
 
+#define DEFAULT_UDP_SHMEM_SEGMENT (1024 * 1024)
+
 /**
  * Important notice: since we are implementing local transport it is assumed, that
  * we have the same byteorder for all peers affected.
@@ -109,6 +111,7 @@ struct ltproto_socket_udp {
 
 			struct ltproto_socket_udp *parent;		// Parent socket
 			struct sockaddr_in peer_addr;			// Connected peer
+			unsigned long unacked_bytes;			// Number of bytes that are unacked
 		} data_sock;
 		struct {
 			struct ltproto_socket_udp *accepted_sk; // Hash of accepted sockets
@@ -132,6 +135,7 @@ struct lt_udp_module_ctx {
 	struct ltproto_ctx *lib_ctx;	// Parent ctx
 	struct lt_objcache *sk_cache;	// Object cache for sockets
 	struct lt_objcache *cmd_cache;			// Object cache for udp commands
+	unsigned long max_segment;		// Maximum amount of unacked data
 };
 
 int udp_shmem_init_func (struct lt_module_ctx **ctx);
@@ -331,12 +335,21 @@ int
 udp_shmem_init_func (struct lt_module_ctx **ctx)
 {
 	struct lt_udp_module_ctx *real_ctx;
+	char *segment_size;
 
 	real_ctx = calloc (1, sizeof (struct lt_udp_module_ctx));
 	real_ctx->len = sizeof (struct lt_udp_module_ctx);
 	real_ctx->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_udp));
 	real_ctx->cmd_cache = lt_objcache_create (sizeof (struct ltproto_udp_command_entry));
 	*ctx = (struct lt_module_ctx *)real_ctx;
+
+	segment_size = getenv ("LTPROTO_SEGMENT_SIZE");
+	if (segment_size != NULL) {
+		real_ctx->max_segment = strtoul (segment_size, NULL, 10);
+	}
+	else {
+		real_ctx->max_segment = DEFAULT_UDP_SHMEM_SEGMENT;
+	}
 
 	return 0;
 }
@@ -583,13 +596,19 @@ recv_more:
 			else {
 				/* XXX: just copy buffer assuming local and remote sizes are equal */
 				memcpy (buf, mem, len);
-				lcmd.cmd = SHMEM_UDP_CMD_ACK;
-				lcmd.payload.cookie = usk->conn_cookie;
-				if (sendto (usk->fd, &lcmd, sizeof (lcmd), 0,
-						(struct sockaddr *)&usk->common.data_sock.peer_addr,
-						sizeof (struct sockaddr_in)) == -1) {
-					return -1;
+				usk->common.data_sock.unacked_bytes += len;
+				if (usk->common.data_sock.unacked_bytes >= real_ctx->max_segment) {
+					lcmd.cmd = SHMEM_UDP_CMD_ACK;
+					lcmd.payload.cookie = usk->conn_cookie;
+					if (sendto (usk->fd, &lcmd, sizeof (lcmd), 0,
+							(struct sockaddr *)&usk->common.data_sock.peer_addr,
+							sizeof (struct sockaddr_in)) == -1) {
+						lt_objcache_free (real_ctx->cmd_cache, cmd);
+						return -1;
+					}
+					usk->common.data_sock.unacked_bytes = 0;
 				}
+
 				lt_objcache_free (real_ctx->cmd_cache, cmd);
 				return len;
 			}
@@ -631,19 +650,26 @@ udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, cons
 			sizeof (struct sockaddr_in)) == -1) {
 		return -1;
 	}
-	cmd = udp_shmem_expect_command (usk, SHMEM_UDP_CMD_ACK, &serrno);
-	if (cmd != NULL) {
+	usk->common.data_sock.unacked_bytes += len;
+	if (usk->common.data_sock.unacked_bytes >= real_ctx->max_segment) {
+		cmd = udp_shmem_expect_command (usk, SHMEM_UDP_CMD_ACK, &serrno);
+		if (cmd != NULL) {
 #ifndef THREAD_UNSAFE
-		pthread_mutex_lock (&usk->inq_lock);
+			pthread_mutex_lock (&usk->inq_lock);
 #endif
-		TAILQ_REMOVE (&usk->in_q, cmd, link);
+			TAILQ_REMOVE (&usk->in_q, cmd, link);
 #ifndef THREAD_UNSAFE
-		pthread_mutex_unlock (&usk->inq_lock);
+			pthread_mutex_unlock (&usk->inq_lock);
 #endif
-		/* XXX: Check cookie */
-		real_ctx->lib_ctx->allocator->allocator_free_func (real_ctx->lib_ctx->alloc_ctx,
-				shared_data, len);
-		lt_objcache_free (real_ctx->cmd_cache, cmd);
+			/* XXX: Check cookie */
+			usk->common.data_sock.unacked_bytes = 0;
+			real_ctx->lib_ctx->allocator->allocator_free_func (real_ctx->lib_ctx->alloc_ctx,
+					shared_data, len);
+			lt_objcache_free (real_ctx->cmd_cache, cmd);
+			return len;
+		}
+	}
+	else {
 		return len;
 	}
 	return -1;
