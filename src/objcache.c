@@ -90,7 +90,7 @@ lt_objcache_alloc_page (size_t page_size, size_t elt_size, struct lt_objcache_pa
 	assert (page->cur_elts < page->max_elts);
 
 
-	for (i = 0; i < page->max_elts / NBBY && cur_offset == -1; i ++) {
+	for (i = 0; i < NBYTES (page->max_elts) && cur_offset == -1; i ++) {
 		map_byte = page->data[i];
 		if ((map_byte & 0xff) == 0xff) {
 			/* Full byte */
