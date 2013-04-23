@@ -36,7 +36,7 @@
 /* How much pages are in an arena by default */
 const unsigned int default_arena_pages = 128;
 /* How much elements can we allow in reused chunks queue */
-#define REUSED_QUEUE_MAX 16
+#define REUSED_QUEUE_MAX 128
 
 int linear_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq);
 void * linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_tag *tag);

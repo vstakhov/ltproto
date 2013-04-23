@@ -653,6 +653,7 @@ udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, cons
 		errno = EAGAIN;
 		return -1;
 	}
+	memcpy (shared_data, buf, len);
 	lcmd.payload.data.len = len;
 
 	if (sendto (usk->fd, &lcmd, sizeof (lcmd), 0,
