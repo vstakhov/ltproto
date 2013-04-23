@@ -46,6 +46,8 @@
 
 #cmakedefine WITH_GPERF_TOOLS    1
 
+#cmakedefine HAVE_SCHED_SETAFFINITY 1
+
 /* sys/types */
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>

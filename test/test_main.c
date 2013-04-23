@@ -249,7 +249,7 @@ syscalls_test (void)
 static void
 usage (void)
 {
-	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-h]\n");
+	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-c] [-h]\n");
 	exit (EXIT_FAILURE);
 }
 
@@ -291,6 +291,7 @@ main (int argc, char **argv)
 	unsigned long buflen = 1024 * 1024;
 	uint64_t bytes = 8589934592ULL;
 	char c;
+	int single_core = 0;
 
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
@@ -299,7 +300,7 @@ main (int argc, char **argv)
 	sa.sa_handler = usr1_handler;
 	sigaction (SIGUSR1, &sa, NULL);
 
-	while ((c = getopt (argc, argv, "b:s:h")) != -1) {
+	while ((c = getopt (argc, argv, "cb:s:h")) != -1) {
 		switch(c) {
 		case 'b':
 			if (optarg) {
@@ -321,6 +322,9 @@ main (int argc, char **argv)
 				usage ();
 			}
 			break;
+		case 'c':
+			single_core = 1;
+			break;
 		default:
 			usage ();
 			break;
@@ -329,6 +333,16 @@ main (int argc, char **argv)
 
 	argc -= optind;
 	argv -= optind;
+
+#ifdef HAVE_SCHED_SETAFFINITY
+	if (single_core) {
+		/* Bind to a single core */
+		cpu_set_t my_set;
+		CPU_ZERO (&my_set);
+		CPU_SET (1, &my_set);
+		sched_setaffinity (0, sizeof(cpu_set_t), &my_set);
+	}
+#endif
 
 	ltproto_init ();
 
