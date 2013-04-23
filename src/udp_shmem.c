@@ -88,6 +88,12 @@ struct ltproto_udp_command_entry {
 	TAILQ_ENTRY (ltproto_udp_command_entry) link;
 };
 
+struct unacked_chunk_entry {
+	void *addr;
+	size_t len;
+	struct unacked_chunk_entry *next;
+};
+
 struct ltproto_socket_udp {
 	int fd;							// Socket descriptor
 	int tcp_fd;						// TCP link socket
@@ -111,6 +117,7 @@ struct ltproto_socket_udp {
 
 			struct ltproto_socket_udp *parent;		// Parent socket
 			struct sockaddr_in peer_addr;			// Connected peer
+			struct unacked_chunk_entry *unacked_chunks;	 // Chunks that are unacked
 			unsigned long unacked_bytes;			// Number of bytes that are unacked
 		} data_sock;
 		struct {
@@ -135,6 +142,7 @@ struct lt_udp_module_ctx {
 	struct ltproto_ctx *lib_ctx;	// Parent ctx
 	struct lt_objcache *sk_cache;	// Object cache for sockets
 	struct lt_objcache *cmd_cache;			// Object cache for udp commands
+	struct lt_objcache *chunks_cache; // Object cache for unacked chunks
 	unsigned long max_segment;		// Maximum amount of unacked data
 };
 
@@ -341,6 +349,7 @@ udp_shmem_init_func (struct lt_module_ctx **ctx)
 	real_ctx->len = sizeof (struct lt_udp_module_ctx);
 	real_ctx->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_udp));
 	real_ctx->cmd_cache = lt_objcache_create (sizeof (struct ltproto_udp_command_entry));
+	real_ctx->chunks_cache = lt_objcache_create (sizeof (struct unacked_chunk_entry));
 	*ctx = (struct lt_module_ctx *)real_ctx;
 
 	segment_size = getenv ("LTPROTO_SEGMENT_SIZE");
@@ -625,8 +634,9 @@ udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, cons
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
 	struct ltproto_udp_command lcmd;
 	struct ltproto_udp_command_entry *cmd;
-	u_char *shared_data;
+	struct unacked_chunk_entry *unacked_chunk, *tmp;
 	struct lt_udp_module_ctx *real_ctx = (struct lt_udp_module_ctx *)ctx;
+	u_char *shared_data;
 	int serrno;
 
 	if (usk->state != SHMEM_UDP_STATE_CONNECTED &&
@@ -663,6 +673,17 @@ udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, cons
 #endif
 			/* XXX: Check cookie */
 			usk->common.data_sock.unacked_bytes = 0;
+
+			/* Free all chunks pending */
+			unacked_chunk = usk->common.data_sock.unacked_chunks;
+			while (unacked_chunk != NULL) {
+				real_ctx->lib_ctx->allocator->allocator_free_func (real_ctx->lib_ctx->alloc_ctx,
+									unacked_chunk->addr, unacked_chunk->len);
+				tmp = unacked_chunk;
+				unacked_chunk = unacked_chunk->next;
+				lt_objcache_free (real_ctx->chunks_cache, tmp);
+			}
+			usk->common.data_sock.unacked_chunks = NULL;
 			real_ctx->lib_ctx->allocator->allocator_free_func (real_ctx->lib_ctx->alloc_ctx,
 					shared_data, len);
 			lt_objcache_free (real_ctx->cmd_cache, cmd);
@@ -670,6 +691,11 @@ udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, cons
 		}
 	}
 	else {
+		unacked_chunk = lt_objcache_alloc (real_ctx->chunks_cache);
+		unacked_chunk->addr = shared_data;
+		unacked_chunk->len = len;
+		unacked_chunk->next = usk->common.data_sock.unacked_chunks;
+		usk->common.data_sock.unacked_chunks = unacked_chunk;
 		return len;
 	}
 	return -1;
@@ -696,8 +722,10 @@ int
 udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk, *csk;
-	int serrno = 0, ret;
 	struct ltproto_udp_command lcmd;
+	struct unacked_chunk_entry *unacked_chunk, *tmp;
+	struct lt_udp_module_ctx *real_ctx = (struct lt_udp_module_ctx *)ctx;
+	int serrno = 0, ret;
 
 	if (usk->state == SHMEM_UDP_STATE_LISTEN) {
 #ifndef THREAD_SAFE
@@ -735,8 +763,20 @@ udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 		}
 	}
 
+	if (usk->state == SHMEM_UDP_STATE_CONNECTED || usk->state == SHMEM_UDP_STATE_ACCEPTED) {
+		/* Free all chunks pending */
+		unacked_chunk = usk->common.data_sock.unacked_chunks;
+		while (unacked_chunk != NULL) {
+			real_ctx->lib_ctx->allocator->allocator_free_func (real_ctx->lib_ctx->alloc_ctx,
+					unacked_chunk->addr, unacked_chunk->len);
+			tmp = unacked_chunk;
+			unacked_chunk = unacked_chunk->next;
+			lt_objcache_free (real_ctx->chunks_cache, tmp);
+		}
+	}
+
 	ret = close (sk->fd);
-	lt_objcache_free (ctx->sk_cache, sk);
+	lt_objcache_free (real_ctx->sk_cache, sk);
 	errno = serrno;
 
 	return ret;
@@ -749,6 +789,7 @@ udp_shmem_destroy_func (struct lt_module_ctx *ctx)
 
 	lt_objcache_destroy (real_ctx->cmd_cache);
 	lt_objcache_destroy (real_ctx->sk_cache);
+	lt_objcache_destroy (real_ctx->chunks_cache);
 	free (real_ctx);
 	return 0;
 }
