@@ -171,7 +171,7 @@ static void
 syscalls_test (void)
 {
 	void *tdata;
-	u_char *map;
+	u_char *map, *src, *dst;
 	uint64_t msec;
 	key_t key;
 	int fd, i, len, pages = 1024, psize = getpagesize (), shmid;
@@ -244,6 +244,24 @@ syscalls_test (void)
 	assert (shmctl (shmid, IPC_RMID, &shm_ds) != -1);
 	msec = end_test_time (tdata);
 	printf ("shmctl: %lu nanoseconds\n", msec);
+
+	start_test_time (&tdata);
+	src = malloc (1024 * 1024);
+	dst = malloc (1024 * 1024);
+
+	start_test_time (&tdata);
+	memcpy (src, dst, 1024 * 1024);
+	msec = end_test_time (tdata);
+	printf ("memcpy 1mb: %lu nanoseconds\n", msec);
+	start_test_time (&tdata);
+	for (i = 0; i < 1024; i ++) {
+		memcpy (src + i * 1024, dst + i * 1024, 1024);
+	}
+	msec = end_test_time (tdata);
+	printf ("1024 memcpy 1kb: %lu nanoseconds\n", msec);
+
+	free (src);
+	free (dst);
 }
 
 static void
