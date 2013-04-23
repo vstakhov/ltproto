@@ -138,7 +138,7 @@ ENDIF(OPENSSL_FOUND)
  # Optimization flags
 IF(NOT CMAKE_C_OPT_FLAGS)
     IF(ENABLE_OPTIMIZATION MATCHES "ON")
-        SET(CMAKE_C_OPT_FLAGS "-Ofast -march=native -fstrict-aliasing")
+        SET(CMAKE_C_OPT_FLAGS "-O3 -march=native -fstrict-aliasing")
     ELSE(ENABLE_OPTIMIZATION MATCHES "ON")
         SET(CMAKE_C_OPT_FLAGS "-O0 -fstrict-aliasing -g")
     ENDIF(ENABLE_OPTIMIZATION MATCHES "ON")

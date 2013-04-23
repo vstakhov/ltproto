@@ -245,7 +245,6 @@ syscalls_test (void)
 	msec = end_test_time (tdata);
 	printf ("shmctl: %lu nanoseconds\n", msec);
 
-	start_test_time (&tdata);
 	src = malloc (1024 * 1024);
 	dst = malloc (1024 * 1024);
 
@@ -253,6 +252,12 @@ syscalls_test (void)
 	memcpy (src, dst, 1024 * 1024);
 	msec = end_test_time (tdata);
 	printf ("memcpy 1mb: %lu nanoseconds\n", msec);
+
+	free (src);
+	free (dst);
+
+	src = malloc (1024 * 1024);
+	dst = malloc (1024 * 1024);
 	start_test_time (&tdata);
 	for (i = 0; i < 1024; i ++) {
 		memcpy (src + i * 1024, dst + i * 1024, 1024);
