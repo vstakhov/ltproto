@@ -63,4 +63,11 @@ pid_t fork_server (u_short port, u_int recv_buffer_size, void *mod);
  */
 int do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod);
 
+/**
+ * Return humanized number of bytes
+ * @param bytes bytes to print
+ * @return static buffer with desired string
+ */
+char* print_bytes (uint64_t bytes);
+
 #endif /* TEST_UTILS_H_ */

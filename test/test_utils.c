@@ -233,3 +233,29 @@ err:
 	ltproto_close (sock);
 	return -1;
 }
+
+/**
+ * Return humanized number of bytes
+ * @param bytes bytes to print
+ * @return static buffer with desired string
+ */
+char*
+print_bytes (uint64_t bytes)
+{
+	static char buf[16];
+	const char *prefixes = "kMGTPE";
+	uint64_t quotient = bytes, cur = bytes;
+	int i;
+
+	for (i = 0; i < 6; i ++) {
+		cur = quotient >> 10;
+		if (cur < 1024) {
+			break;
+		}
+		quotient = cur;
+	}
+	snprintf (buf, sizeof (buf), "%lu.%lu%cb", (unsigned long)cur,
+			(unsigned long)quotient % 1024, prefixes[i]);
+
+	return buf;
+}

@@ -54,7 +54,7 @@ wait_for_server (void)
 }
 
 static void
-perform_module_test_simple (const char *mname, unsigned long buflen)
+perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t bytes)
 {
 	pid_t spid;
 	void *tdata, *mod;
@@ -67,9 +67,12 @@ perform_module_test_simple (const char *mname, unsigned long buflen)
 	assert (spid != -1);
 	wait_for_server ();
 	start_test_time (&tdata);
-	assert (do_client (50009, buflen, 8589934592LL / (uint64_t)buflen, mod) != -1);
+	assert (do_client (50009, buflen, bytes / (uint64_t)buflen, mod) != -1);
 	msec = end_test_time (tdata);
-	printf ("Send buffer: 1Mb, Recv buffer: 1Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
+	printf ("Send buffer: %s, ", print_bytes (buflen));
+	printf ("Recv buffer: %s; ", print_bytes (buflen));
+	printf ("Transmitted %s in ", print_bytes (bytes));
+	printf ("%.6f milliseconds\n", round_test_time (msec));
 
 #if 0
 	start_test_time (&tdata);
@@ -267,8 +270,8 @@ main (int argc, char **argv)
 	perform_allocator_test ("system", 10240, test_chunk_circular);
 	assert (ltproto_switch_allocator ("linear allocator") != -1);
 	perform_allocator_test ("linear", 10240, test_chunk_circular);
-	perform_module_test_simple ("null", buflen);
-	perform_module_test_simple ("udp-shmem", buflen);
+	perform_module_test_simple ("null", buflen, 8589934592ULL);
+	perform_module_test_simple ("udp-shmem", buflen, 8589934592ULL);
 
 	ltproto_destroy ();
 
