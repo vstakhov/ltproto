@@ -392,7 +392,8 @@ main (int argc, char **argv)
 	}
 	perform_module_test_simple ("null", buflen, bytes);
 	perform_module_test_simple ("unix", buflen, bytes);
-	perform_module_test_simple ("udp-shmem", buflen, bytes);
+	perform_module_test_simple ("udp_shmem", buflen, bytes);
+	perform_module_test_simple ("unix_shmem", buflen, bytes);
 
 	ltproto_destroy ();
 
