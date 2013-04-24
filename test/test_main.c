@@ -69,7 +69,7 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	assert (spid != -1);
 	wait_for_server ();
 	start_test_time (&tdata);
-	assert (do_client (port, buflen, bytes / (uint64_t)buflen, mod) != -1);
+	assert (do_client (port, buflen, bytes / (uint64_t)buflen, mod, mname) != -1);
 	msec = end_test_time (tdata);
 	printf ("Send buffer: %s, ", print_bytes (buflen));
 	printf ("Recv buffer: %s; ", print_bytes (buflen));

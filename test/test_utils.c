@@ -222,7 +222,7 @@ do_client:
  * @return
  */
 int
-do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
+do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, const char *modname)
 {
 	struct ltproto_socket *sock;
 	u_int i;
@@ -245,7 +245,7 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod)
 		goto err;
 	}
 
-	gperf_profiler_init ("client");
+	gperf_profiler_init (modname);
 	for (i = 0; i < repeat_count; i ++) {
 		if (ltproto_write (sock, send_buf, send_buffer_size) == -1) {
 			perror ("write failed");
