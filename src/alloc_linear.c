@@ -81,6 +81,7 @@ struct lt_linear_allocator_ctx {
 	struct {
 		struct alloc_chunk *chunk;
 		struct alloc_arena *arena;
+		int used;
 	} free_chunks [REUSED_QUEUE_MAX];	// Free chunks that can be reused
 	struct foreign_alloc_arena *attached_arenas;
 	unsigned int free_chunks_cnt;		// Amount of chunks if free chunk queue
@@ -283,7 +284,10 @@ find_free_chunk (struct lt_linear_allocator_ctx *ctx, size_t size, struct alloc_
 	int sel = -1;
 
 	/* Initially search for chunk that can be reused */
-	for (i = 0; i < ctx->free_chunks_cnt; i ++) {
+	for (i = 0; i < REUSED_QUEUE_MAX; i ++) {
+		if (!ctx->free_chunks[i].used) {
+			continue;
+		}
 		cur = ctx->free_chunks[i].chunk;
 		if (cur->len >= size && cur->len < minimal_size) {
 			sel = i;
@@ -299,11 +303,13 @@ find_free_chunk (struct lt_linear_allocator_ctx *ctx, size_t size, struct alloc_
 		*par = ctx->free_chunks[sel].arena;
 		//printf("REUSED CHUNK %p\n", tmp);
 		ctx->free_chunks_cnt --;
+		ctx->free_chunks[sel].used = 0;
+#if 0
 		for (i = sel; i < ctx->free_chunks_cnt; i ++) {
 			memcpy (&ctx->free_chunks[i], &ctx->free_chunks[i + 1], sizeof (ctx->free_chunks[0]));
 		}
 		memset (&ctx->free_chunks[i + 1], 0, sizeof (ctx->free_chunks[0]));
-
+#endif
 		return tmp;
 	}
 
@@ -337,10 +343,14 @@ find_chunk_for_addr (struct lt_linear_allocator_ctx *ctx, uintptr_t addr, size_t
 	unsigned int i;
 
 	/* Initially search address in chunks planned to free */
-	for (i = 0; i < ctx->free_chunks_cnt; i ++) {
+	for (i = 0; i < REUSED_QUEUE_MAX; i ++) {
+		if (!ctx->free_chunks[i].used) {
+			continue;
+		}
 		cur = ctx->free_chunks[i].chunk;
 		next = TAILQ_NEXT (cur, link);
 		prev = TAILQ_PREV (cur, chunk_head, link);
+
 		if (next && next->len == len && addr == next->base) {
 			*arena = ctx->free_chunks[i].arena;
 			return next;
@@ -488,7 +498,7 @@ linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size)
 	struct alloc_chunk *chunk, *chunk_exp, *tmp;
 	struct alloc_arena *ar, *ar_exp;
 	struct lt_linear_allocator_ctx *real_ctx = (struct lt_linear_allocator_ctx *)ctx;
-	int sel = -1;
+	int sel = -1, i;
 
 	assert (addr != NULL);
 
@@ -499,10 +509,16 @@ linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size)
 
 	/* Initially we need to push chunk to a free list */
 	if (real_ctx->free_chunks_cnt < REUSED_QUEUE_MAX) {
-		real_ctx->free_chunks[real_ctx->free_chunks_cnt].chunk = chunk;
-		real_ctx->free_chunks[real_ctx->free_chunks_cnt].arena = ar;
-		real_ctx->free_chunks_cnt ++;
-		return;
+		for (i = 0; i < REUSED_QUEUE_MAX; i ++) {
+			if (!real_ctx->free_chunks[i].used) {
+				real_ctx->free_chunks[i].chunk = chunk;
+				real_ctx->free_chunks[i].arena = ar;
+				real_ctx->free_chunks[i].used = 1;
+				real_ctx->free_chunks_cnt ++;
+				return;
+			}
+		}
+		assert (0);
 	}
 	/* We need to expire some chunks in wait queue */
 
