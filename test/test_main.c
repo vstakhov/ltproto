@@ -391,6 +391,7 @@ main (int argc, char **argv)
 		assert (ltproto_switch_allocator ("linear allocator") != -1);
 	}
 	perform_module_test_simple ("null", buflen, bytes);
+	perform_module_test_simple ("unix", buflen, bytes);
 	perform_module_test_simple ("udp-shmem", buflen, bytes);
 
 	ltproto_destroy ();

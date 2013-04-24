@@ -283,8 +283,9 @@ SET(LTPROTO_SRC src/ltproto.c
 				${CMAKE_BINARY_DIR}/src/modules.c)
 				
 SET(MODULES_SRC src/null.c 
-				src/udp_shmem.c)
-SET(MODULES_LIST null udp_shmem)
+				src/udp_shmem.c
+				src/unix_socket.c)
+SET(MODULES_LIST null udp_shmem unix)
 
 SET(ALLOCATORS_SRC	src/alloc_linear.c 
 					src/alloc_system.c)

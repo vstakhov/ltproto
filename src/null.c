@@ -98,7 +98,6 @@ null_setopts_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int opt
 int
 null_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
-	int reuseaddr = 1;
 
 	return 0;
 }
