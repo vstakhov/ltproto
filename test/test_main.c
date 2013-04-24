@@ -272,7 +272,7 @@ syscalls_test (void)
 static void
 usage (void)
 {
-	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-c] [-h]\n");
+	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-f] [-c] [-h]\n");
 	exit (EXIT_FAILURE);
 }
 
@@ -314,7 +314,7 @@ main (int argc, char **argv)
 	unsigned long buflen = 1024 * 1024;
 	uint64_t bytes = 8589934592ULL;
 	char c;
-	int single_core = 0;
+	int single_core = 0, full_test = 0;
 
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
@@ -323,7 +323,7 @@ main (int argc, char **argv)
 	sa.sa_handler = usr1_handler;
 	sigaction (SIGUSR1, &sa, NULL);
 
-	while ((c = getopt (argc, argv, "cb:s:h")) != -1) {
+	while ((c = getopt (argc, argv, "fcb:s:h")) != -1) {
 		switch(c) {
 		case 'b':
 			if (optarg) {
@@ -344,6 +344,9 @@ main (int argc, char **argv)
 			else {
 				usage ();
 			}
+			break;
+		case 'f':
+			full_test = 1;
 			break;
 		case 'c':
 			single_core = 1;
@@ -376,12 +379,17 @@ main (int argc, char **argv)
 
 	ltproto_init ();
 
-	syscalls_test ();
-	/* Start a simple tests */
-	assert (ltproto_switch_allocator ("system allocator") != -1);
-	perform_allocator_test ("system", 10240, test_chunk_circular);
-	assert (ltproto_switch_allocator ("linear allocator") != -1);
-	perform_allocator_test ("linear", 10240, test_chunk_circular);
+	if (full_test) {
+		syscalls_test ();
+		/* Start a simple tests */
+		assert (ltproto_switch_allocator ("system allocator") != -1);
+		perform_allocator_test ("system", 10240, test_chunk_circular);
+		assert (ltproto_switch_allocator ("linear allocator") != -1);
+		perform_allocator_test ("linear", 10240, test_chunk_circular);
+	}
+	else {
+		assert (ltproto_switch_allocator ("linear allocator") != -1);
+	}
 	perform_module_test_simple ("null", buflen, bytes);
 	perform_module_test_simple ("udp-shmem", buflen, bytes);
 
