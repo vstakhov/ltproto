@@ -85,12 +85,12 @@ end_test_time (void *time_data)
 # else
 	assert (clock_gettime (CLOCK_REALTIME, &tdata_cur) == 0);
 # endif
-	diff = (tdata_cur.tv_sec - tdata_prev->tv_sec) * 1000000000L +
+	diff = (tdata_cur.tv_sec - tdata_prev->tv_sec) * 1000000000LL +
 				(tdata_cur.tv_nsec - tdata_prev->tv_nsec);
 #else
 	assert (gettimeofday (&tdata_cur, NULL) == 0);
-	diff = (tdata_cur.tv_sec - tdata_prev->tv_sec) * 1000000000L +
-			(tdata_cur.tv_usec - tdata_prev->tv_usec) * 1000;
+	diff = (tdata_cur.tv_sec - tdata_prev->tv_sec) * 1000000000LL +
+			(tdata_cur.tv_usec - tdata_prev->tv_usec) * 1000LL;
 #endif
 
 	free (time_data);
@@ -118,7 +118,7 @@ round_test_time (uint64_t nanoseconds)
     clock_getres (CLOCK_REALTIME, &ts);
 # endif
 
-    res = (int64_t)log10 (1000000000L / ts.tv_nsec);
+    res = (int64_t)log10 (1000000000LL / ts.tv_nsec);
     if (res < 0) {
         res = 0;
     }
