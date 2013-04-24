@@ -203,6 +203,12 @@ int
 unix_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
 	int serrno, ret;
+	struct sockaddr_un sun;
+	socklen_t slen = sizeof (sun);
+
+	if (getsockname (sk->fd, (struct sockaddr *)&sun, &slen) != -1) {
+		unlink (sun.sun_path);
+	}
 
 	ret = close (sk->fd);
 	serrno = errno;
