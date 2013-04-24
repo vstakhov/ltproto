@@ -365,6 +365,13 @@ main (int argc, char **argv)
 		CPU_SET (1, &my_set);
 		sched_setaffinity (0, sizeof(cpu_set_t), &my_set);
 	}
+#elif defined(HAVE_CPUSET_SETAFFINITY)
+	if (single_core) {
+		cpuset_t mask;
+		CPU_ZERO (&mask);
+		CPU_SET (0, &mask);
+		cpuset_setaffinity (CPU_LEVEL_WHICH, CPU_WHICH_PID, -1, sizeof (mask), &mask);
+	}
 #endif
 
 	ltproto_init ();

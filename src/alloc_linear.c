@@ -137,6 +137,7 @@ create_shared_arena (struct lt_linear_allocator_ctx *ctx, size_t size)
 		return -1;
 	}
 	close (fd);
+
 	new = calloc (1, sizeof (struct alloc_arena));
 	if (new == NULL) {
 		serrno = errno;
