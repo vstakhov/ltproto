@@ -77,6 +77,7 @@ struct ltproto_socket *
 unix_socket_func (struct lt_module_ctx *ctx)
 {
 	struct ltproto_socket *sk;
+	int reuseaddr = 1;
 
 	sk = lt_objcache_alloc (ctx->sk_cache);
 	assert (sk != NULL);
@@ -85,6 +86,7 @@ unix_socket_func (struct lt_module_ctx *ctx)
 		lt_objcache_free (ctx->sk_cache, sk);
 		return NULL;
 	}
+	setsockopt (sk->fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof (reuseaddr));
 
 	return sk;
 }

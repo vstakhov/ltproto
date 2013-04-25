@@ -169,6 +169,7 @@ unix_shmem_socket_func (struct lt_module_ctx *ctx)
 {
 	struct ltproto_socket_unix *sk;
 	struct lt_unix_module_ctx *real_ctx = (struct lt_unix_module_ctx *)ctx;
+	int reuseaddr = 1;
 
 	sk = lt_objcache_alloc0 (real_ctx->sk_cache);
 	assert (sk != NULL);
@@ -177,6 +178,7 @@ unix_shmem_socket_func (struct lt_module_ctx *ctx)
 		lt_objcache_free (real_ctx->sk_cache, sk);
 		return NULL;
 	}
+	setsockopt (sk->fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof (reuseaddr));
 
 	return (struct ltproto_socket *)sk;
 }

@@ -64,8 +64,8 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 
 	if (!compact) {
 		printf ("Test for module: %s\n", mname);
-		fflush (stdout);
 	}
+	fflush (stdout);
 	port = rand ();
 	mod = ltproto_select_module (mname);
 	spid = fork_server (port, buflen, mod);
@@ -90,6 +90,7 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	msec = end_test_time (tdata);
 	printf ("Send buffer: 4Mb, Recv buffer: 4Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
 #endif
+	fflush (stdout);
 	kill (spid, SIGTERM);
 }
 
@@ -402,9 +403,13 @@ main (int argc, char **argv)
 		assert (ltproto_switch_allocator ("linear allocator") != -1);
 	}
 	perform_module_test_simple ("null", buflen, bytes);
+	sleep (1);
 	perform_module_test_simple ("unix", buflen, bytes);
+	sleep (1);
 	perform_module_test_simple ("udp_shmem", buflen, bytes);
+	sleep (1);
 	perform_module_test_simple ("unix_shmem", buflen, bytes);
+	sleep (1);
 
 	ltproto_destroy ();
 
