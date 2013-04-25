@@ -27,7 +27,8 @@
 #include "test_utils.h"
 #include <assert.h>
 
-sig_atomic_t got_usr1 = 0;
+static sig_atomic_t got_usr1 = 0;
+static int compact = 0;
 
 static void
 usr1_handler (int signo)
@@ -61,8 +62,10 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	uint64_t msec;
 	short port;
 
-	printf ("Test for module: %s\n", mname);
-	fflush (stdout);
+	if (!compact) {
+		printf ("Test for module: %s\n", mname);
+		fflush (stdout);
+	}
 	port = rand ();
 	mod = ltproto_select_module (mname);
 	spid = fork_server (port, buflen, mod);
@@ -71,10 +74,15 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	start_test_time (&tdata);
 	assert (do_client (port, buflen, bytes / (uint64_t)buflen, mod, mname) != -1);
 	msec = end_test_time (tdata);
-	printf ("Send buffer: %s, ", print_bytes (buflen));
-	printf ("Recv buffer: %s; ", print_bytes (buflen));
-	printf ("Transmitted %s in ", print_bytes (bytes));
-	printf ("%.6f milliseconds\n", round_test_time (msec));
+	if (compact) {
+		printf ("Send buffer: %s, ", print_bytes (buflen));
+		printf ("Recv buffer: %s; ", print_bytes (buflen));
+		printf ("Transmitted %s in ", print_bytes (bytes));
+		printf ("%.6f milliseconds\n", round_test_time (msec));
+	}
+	else {
+		printf ("%llu\n", (long long unsigned)msec);
+	}
 
 #if 0
 	start_test_time (&tdata);
@@ -272,7 +280,7 @@ syscalls_test (void)
 static void
 usage (void)
 {
-	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-f] [-c] [-h]\n");
+	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-fcqh]\n");
 	exit (EXIT_FAILURE);
 }
 
@@ -323,7 +331,7 @@ main (int argc, char **argv)
 	sa.sa_handler = usr1_handler;
 	sigaction (SIGUSR1, &sa, NULL);
 
-	while ((c = getopt (argc, argv, "fcb:s:h")) != -1) {
+	while ((c = getopt (argc, argv, "qfcb:s:h")) != -1) {
 		switch(c) {
 		case 'b':
 			if (optarg) {
@@ -350,6 +358,9 @@ main (int argc, char **argv)
 			break;
 		case 'c':
 			single_core = 1;
+			break;
+		case 'q':
+			compact = 1;
 			break;
 		default:
 			usage ();
