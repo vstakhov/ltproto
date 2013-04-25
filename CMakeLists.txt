@@ -231,7 +231,7 @@ IF(HAVE_SCHED_H)
 ENDIF(HAVE_SCHED_H)  
 
 IF(HAVE_SYS_CPUSET_H)
-	CHECK_SYMBOL_EXISTS(cpuset_setaffinity sys/cpuset.h HAVE_CPUSET_SETAFFINITY)
+	CHECK_SYMBOL_EXISTS(cpuset_setaffinity "sys/param.h;sys/cpuset.h" HAVE_CPUSET_SETAFFINITY)
 ENDIF(HAVE_SYS_CPUSET_H)
 
 # Some dependencies
