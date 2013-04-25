@@ -66,7 +66,7 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 		printf ("Test for module: %s\n", mname);
 	}
 	fflush (stdout);
-	port = rand ();
+	port = rand () % 20000 + 20000;
 	mod = ltproto_select_module (mname);
 	spid = fork_server (port, buflen, mod);
 	assert (spid != -1);
