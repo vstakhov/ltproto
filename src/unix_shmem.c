@@ -173,7 +173,11 @@ unix_shmem_socket_func (struct lt_module_ctx *ctx)
 
 	sk = lt_objcache_alloc0 (real_ctx->sk_cache);
 	assert (sk != NULL);
+#ifdef HAVE_UNIX_SEQPACKET
 	sk->fd = socket (AF_UNIX, SOCK_SEQPACKET, 0);
+#else
+	sk->fd = socket (AF_UNIX, SOCK_STREAM, 0);
+#endif
 	if (sk->fd == -1) {
 		lt_objcache_free (real_ctx->sk_cache, sk);
 		return NULL;

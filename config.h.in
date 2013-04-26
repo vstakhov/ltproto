@@ -107,6 +107,8 @@
 #cmakedefine HAVE_ARC4RAND		1
 #cmakedefine HAVE_HUGETLB		1
 
+#cmakedefine HAVE_UNIX_SEQPACKET 1
+
 
 /* cdefs */
 #ifdef HAVE_SYS_CDEFS_H

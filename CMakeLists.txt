@@ -16,6 +16,7 @@ INCLUDE(CheckCSourceCompiles)
 INCLUDE(CheckLibraryExists)
 INCLUDE(CheckCCompilerFlag)
 INCLUDE(FindOpenSSL)
+INCLUDE(CheckCSourceRuns)
 
 OPTION(ENABLE_DEBUG_MODE   "Enable debug output [default: ON]"                  ON)
 OPTION(ENABLE_OPTIMIZATION "Enable optimization [default: OFF]"                 OFF)
@@ -218,9 +219,9 @@ CHECK_INCLUDE_FILES(sys/file.h  HAVE_SYS_FILE_H)
 CHECK_INCLUDE_FILES(sys/utsname.h  HAVE_SYS_UTSNAME_H)
 CHECK_INCLUDE_FILES(sys/resource.h  HAVE_SYS_RESOURCE_H)
 CHECK_INCLUDE_FILES(sys/random.h  HAVE_SYS_RANDOM_H)
-CHECK_INCLUDE_FILES(netinet/in.h  HAVE_NETINET_IN_H)
-CHECK_INCLUDE_FILES(arpa/inet.h  HAVE_ARPA_INET_H)
-CHECK_INCLUDE_FILES(netinet/tcp.h  HAVE_NETINET_TCP_H)
+CHECK_INCLUDE_FILES("sys/types.h;sys/socket.h;netinet/in.h"  HAVE_NETINET_IN_H)
+CHECK_INCLUDE_FILES("sys/types.h;sys/socket.h;arpa/inet.h"  HAVE_ARPA_INET_H)
+CHECK_INCLUDE_FILES("sys/types.h;sys/socket.h;netinet/tcp.h"  HAVE_NETINET_TCP_H)
 CHECK_INCLUDE_FILES(poll.h HAVE_POLL_H)
 CHECK_INCLUDE_FILES(sys/sendfile.h HAVE_SYS_SENDFILE_H)
 CHECK_INCLUDE_FILES(sched.h HAVE_SCHED_H)
@@ -233,6 +234,19 @@ ENDIF(HAVE_SCHED_H)
 IF(HAVE_SYS_CPUSET_H)
 	CHECK_SYMBOL_EXISTS(cpuset_setaffinity "sys/param.h;sys/cpuset.h" HAVE_CPUSET_SETAFFINITY)
 ENDIF(HAVE_SYS_CPUSET_H)
+
+CHECK_C_SOURCE_RUNS("
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+
+int main(int argc, char **argv) {
+	if (socket(AF_UNIX, SOCK_SEQPACKET, 0) == -1) {
+		return -1;
+	}
+	return 0;
+}
+" HAVE_UNIX_SEQPACKET)
 
 # Some dependencies
 IF(HAVE_SYS_WAIT_H)
