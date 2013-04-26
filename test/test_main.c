@@ -55,7 +55,8 @@ wait_for_server (void)
 }
 
 static void
-perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t bytes)
+perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t bytes,
+		int server_core, int client_core)
 {
 	pid_t spid;
 	void *tdata, *mod;
@@ -68,9 +69,12 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	fflush (stdout);
 	port = rand () % 20000 + 20000;
 	mod = ltproto_select_module (mname);
-	spid = fork_server (port, buflen, mod);
+	spid = fork_server (port, buflen, mod, server_core);
 	assert (spid != -1);
 	wait_for_server ();
+	if (client_core != -1) {
+		bind_to_core (client_core);
+	}
 	start_test_time (&tdata);
 	assert (do_client (port, buflen, bytes / (uint64_t)buflen, mod, mname) != -1);
 	msec = end_test_time (tdata);
@@ -281,7 +285,7 @@ syscalls_test (void)
 static void
 usage (void)
 {
-	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-fcqh]\n");
+	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-c same|different] [-fqh]\n");
 	exit (EXIT_FAILURE);
 }
 
@@ -323,7 +327,7 @@ main (int argc, char **argv)
 	unsigned long buflen = 1024 * 1024;
 	uint64_t bytes = 8589934592ULL;
 	char c;
-	int single_core = 0, full_test = 0;
+	int client_core = -1, server_core = -1, full_test = 0;
 
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
@@ -332,7 +336,7 @@ main (int argc, char **argv)
 	sa.sa_handler = usr1_handler;
 	sigaction (SIGUSR1, &sa, NULL);
 
-	while ((c = getopt (argc, argv, "qfcb:s:h")) != -1) {
+	while ((c = getopt (argc, argv, "qfc:b:s:h")) != -1) {
 		switch(c) {
 		case 'b':
 			if (optarg) {
@@ -358,7 +362,22 @@ main (int argc, char **argv)
 			full_test = 1;
 			break;
 		case 'c':
-			single_core = 1;
+			if (optarg) {
+				if (strcmp (optarg, "same") == 0) {
+					client_core = 0;
+					server_core = 0;
+				}
+				else if (strcmp (optarg, "different") == 0) {
+					client_core = 1;
+					server_core = 0;
+				}
+				else {
+					usage ();
+				}
+			}
+			else {
+				usage ();
+			}
 			break;
 		case 'q':
 			compact = 1;
@@ -372,22 +391,7 @@ main (int argc, char **argv)
 	argc -= optind;
 	argv -= optind;
 
-#ifdef HAVE_SCHED_SETAFFINITY
-	if (single_core) {
-		/* Bind to a single core */
-		cpu_set_t my_set;
-		CPU_ZERO (&my_set);
-		CPU_SET (1, &my_set);
-		sched_setaffinity (0, sizeof(cpu_set_t), &my_set);
-	}
-#elif defined(HAVE_CPUSET_SETAFFINITY)
-	if (single_core) {
-		cpuset_t mask;
-		CPU_ZERO (&mask);
-		CPU_SET (0, &mask);
-		cpuset_setaffinity (CPU_LEVEL_WHICH, CPU_WHICH_PID, -1, sizeof (mask), &mask);
-	}
-#endif
+
 
 	ltproto_init ();
 
@@ -402,13 +406,13 @@ main (int argc, char **argv)
 	else {
 		assert (ltproto_switch_allocator ("linear allocator") != -1);
 	}
-	perform_module_test_simple ("null", buflen, bytes);
+	perform_module_test_simple ("null", buflen, bytes, server_core, client_core);
 	sleep (1);
-	perform_module_test_simple ("unix", buflen, bytes);
+	perform_module_test_simple ("unix", buflen, bytes, server_core, client_core);
 	sleep (1);
-	perform_module_test_simple ("udp_shmem", buflen, bytes);
+	perform_module_test_simple ("udp_shmem", buflen, bytes, server_core, client_core);
 	sleep (1);
-	perform_module_test_simple ("unix_shmem", buflen, bytes);
+	perform_module_test_simple ("unix_shmem", buflen, bytes, server_core, client_core);
 	sleep (1);
 
 	ltproto_destroy ();

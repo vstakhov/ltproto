@@ -149,7 +149,7 @@ server_term_handler (int signo)
  * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
  */
 pid_t
-fork_server (u_short port, u_int recv_buffer_size, void *mod)
+fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum)
 {
 	pid_t pid;
 	struct ltproto_socket *sock, *conn = NULL;
@@ -171,6 +171,9 @@ fork_server (u_short port, u_int recv_buffer_size, void *mod)
 	}
 
 do_client:
+	if (corenum != -1) {
+		bind_to_core (corenum);
+	}
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
 	memset (&sa, 0, sizeof (sa));
@@ -327,5 +330,27 @@ gperf_profiler_stop (void)
 {
 #if defined(WITH_GPERF_TOOLS)
 	ProfilerStop ();
+#endif
+}
+
+
+/**
+ * Bind this process to a specific core
+ * @param corenum number of core
+ */
+void
+bind_to_core (int corenum)
+{
+#ifdef HAVE_SCHED_SETAFFINITY
+	/* Bind to a single core */
+	cpu_set_t mask;
+	CPU_ZERO (&mask);
+	CPU_SET (corenum, &mask);
+	sched_setaffinity (0, sizeof(cpu_set_t), &mask);
+#elif defined(HAVE_CPUSET_SETAFFINITY)
+	cpuset_t mask;
+	CPU_ZERO (&mask);
+	CPU_SET (corenum, &mask);
+	cpuset_setaffinity (CPU_LEVEL_WHICH, CPU_WHICH_PID, -1, sizeof (mask), &mask);
 #endif
 }

@@ -52,7 +52,7 @@ double round_test_time (uint64_t nanoseconds);
  * @param recv_buffer_size size of receive buffer
  * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
  */
-pid_t fork_server (u_short port, u_int recv_buffer_size, void *mod);
+pid_t fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum);
 
 /**
  * Perform client test
@@ -81,5 +81,11 @@ void gperf_profiler_init (const char *descr);
  * Stop google perftools and write everything
  */
 void gperf_profiler_stop (void);
+
+/**
+ * Bind this process to a specific core
+ * @param corenum number of core
+ */
+void bind_to_core (int corenum);
 
 #endif /* TEST_UTILS_H_ */
