@@ -285,7 +285,7 @@ syscalls_test (void)
 static void
 usage (void)
 {
-	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-c same|different] [-fqh]\n");
+	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-t <tests>] [-c same|different] [-fqh]\n");
 	exit (EXIT_FAILURE);
 }
 
@@ -319,6 +319,81 @@ parse_opt_number (const char *opt, uint64_t *dest)
 	return 0;
 }
 
+static struct {
+	const char *test_name;
+	const char *description;
+	int enabled;
+} tests_enabled[] = {
+		{
+				"null",
+				"TCP fallback module",
+				1
+		},
+		{
+				"unix",
+				"Unix sockets module",
+				1
+		},
+		{
+				"udp_shmem",
+				"UDP + shared memory module",
+				1
+		},
+		{
+				"unix_shmem",
+				"Unix socket + shared memory module",
+				1
+		}
+};
+
+static int
+parse_tests_enabled (char *optline)
+{
+	char *token;
+	unsigned int i, found;
+
+	/* Disable all tests initially */
+	for (i = 0; i < sizeof (tests_enabled) / sizeof (tests_enabled[0]); i ++) {
+		tests_enabled[i].enabled = 0;
+	}
+
+
+	do {
+		token = strsep (&optline, ", ;");
+		if (token != NULL) {
+			if (strcasecmp (token, "all") == 0 || strcasecmp (token, "*") == 0) {
+				/* Enable all */
+				for (i = 0; i < sizeof (tests_enabled) / sizeof (tests_enabled[0]); i ++) {
+					tests_enabled[i].enabled = 1;
+				}
+			}
+			else if (strcasecmp (token, "list") == 0) {
+				/* Just list all available tests */
+				printf ("Modules available:\n");
+				for (i = 0; i < sizeof (tests_enabled) / sizeof (tests_enabled[0]); i ++) {
+					printf ("%s: %s\n", tests_enabled[i].test_name, tests_enabled[i].description);
+				}
+				exit (EXIT_SUCCESS);
+			}
+			else {
+				found = 0;
+				for (i = 0; i < sizeof (tests_enabled) / sizeof (tests_enabled[0]); i ++) {
+					if (strcasecmp (tests_enabled[i].test_name, token) == 0) {
+						tests_enabled[i].enabled = 1;
+						found = 1;
+						break;
+					}
+				}
+				if (!found) {
+					printf ("Test %s is not defined, ignoring\n", token);
+				}
+			}
+		}
+	} while (token != NULL);
+
+	return 0;
+}
+
 int
 main (int argc, char **argv)
 {
@@ -328,6 +403,7 @@ main (int argc, char **argv)
 	uint64_t bytes = 8589934592ULL;
 	char c;
 	int client_core = -1, server_core = -1, full_test = 0;
+	unsigned int i;
 
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
@@ -336,7 +412,7 @@ main (int argc, char **argv)
 	sa.sa_handler = usr1_handler;
 	sigaction (SIGUSR1, &sa, NULL);
 
-	while ((c = getopt (argc, argv, "qfc:b:s:h")) != -1) {
+	while ((c = getopt (argc, argv, "qfc:b:t:s:h")) != -1) {
 		switch(c) {
 		case 'b':
 			if (optarg) {
@@ -382,6 +458,16 @@ main (int argc, char **argv)
 		case 'q':
 			compact = 1;
 			break;
+		case 't':
+			if (optarg) {
+				if (parse_tests_enabled (optarg) != 0) {
+					usage ();
+				}
+			}
+			else {
+				usage ();
+			}
+			break;
 		default:
 			usage ();
 			break;
@@ -406,14 +492,14 @@ main (int argc, char **argv)
 	else {
 		assert (ltproto_switch_allocator ("linear allocator") != -1);
 	}
-	perform_module_test_simple ("null", buflen, bytes, server_core, client_core);
-	sleep (1);
-	perform_module_test_simple ("unix", buflen, bytes, server_core, client_core);
-	sleep (1);
-	perform_module_test_simple ("udp_shmem", buflen, bytes, server_core, client_core);
-	sleep (1);
-	perform_module_test_simple ("unix_shmem", buflen, bytes, server_core, client_core);
-	sleep (1);
+
+	for (i = 0; i < sizeof (tests_enabled) / sizeof (tests_enabled[0]); i ++) {
+		if (tests_enabled[i].enabled) {
+			perform_module_test_simple (tests_enabled[i].test_name, buflen,
+					bytes, server_core, client_core);
+			sleep (1);
+		}
+	}
 
 	ltproto_destroy ();
 
