@@ -82,7 +82,8 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 		printf ("Send buffer: %s, ", print_bytes (buflen));
 		printf ("Recv buffer: %s; ", print_bytes (buflen));
 		printf ("Transmitted %s in ", print_bytes (bytes));
-		printf ("%.6f milliseconds\n", round_test_time (msec));
+		printf ("%.6f milliseconds, ", round_test_time (msec));
+		printf ("%s/sec transfer speed\n", print_bytes (bytes / (msec / 1000000000LL)));
 	}
 	else {
 		printf ("%llu\n", (long long unsigned)msec);
