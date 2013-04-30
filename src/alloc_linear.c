@@ -77,6 +77,7 @@ struct lt_linear_allocator_ctx {
 	size_t bytes_allocated;
 	uint64_t seq;
 	struct ltproto_ctx *lib_ctx;		// Parent ctx
+	int use_sysv;						// Use sysV shared memory
 	TAILQ_HEAD (ar_head, alloc_arena) arenas;	// Shared arenas
 	struct {
 		struct alloc_chunk *chunk;
@@ -99,14 +100,15 @@ allocator_t linear_allocator = {
 	.allocator_destroy_func = linear_destroy_func
 };
 
+
 /**
- * Create and attach shared memory arena
+ * Create and attach shared memory arena using posix shmem
  * @param ctx context
  * @param size size of arena to be created
  * @return zero in case of success or -1 in case of error
  */
-static int
-create_shared_arena (struct lt_linear_allocator_ctx *ctx, size_t size)
+static struct alloc_arena *
+create_shared_arena_posix (struct lt_linear_allocator_ctx *ctx, size_t size)
 {
 	char arena_name[64];
 	int fd, flags, serrno;
@@ -116,14 +118,14 @@ create_shared_arena (struct lt_linear_allocator_ctx *ctx, size_t size)
 	snprintf (arena_name, sizeof (arena_name), "/lin_%lu", (long unsigned)++ctx->seq);
 	fd = shm_open (arena_name, O_RDWR | O_CREAT | O_EXCL, 00600);
 	if (fd == -1) {
-		return -1;
+		return NULL;
 	}
 	if (ftruncate (fd, size) == -1) {
 		serrno = errno;
 		shm_unlink (arena_name);
 		close (fd);
 		errno = serrno;
-		return -1;
+		return NULL;
 	}
 #ifdef HAVE_HUGETLB
 	flags = MAP_SHARED;
@@ -135,7 +137,7 @@ create_shared_arena (struct lt_linear_allocator_ctx *ctx, size_t size)
 		shm_unlink (arena_name);
 		close (fd);
 		errno = serrno;
-		return -1;
+		return NULL;
 	}
 	close (fd);
 
@@ -145,21 +147,75 @@ create_shared_arena (struct lt_linear_allocator_ctx *ctx, size_t size)
 		munmap (map, size);
 		shm_unlink (arena_name);
 		errno = serrno;
-		return -1;
+		return NULL;
+	}
+
+	new->tag.seq = ctx->seq;
+	new->begin = (uintptr_t)map;
+	return new;
+}
+
+/**
+ * Create and attach shared memory arena
+ * @param ctx context
+ * @param size size of arena to be created
+ * @return zero in case of success or -1 in case of error
+ */
+static struct alloc_arena *
+create_shared_arena_sysv (struct lt_linear_allocator_ctx *ctx, size_t size)
+{
+	int id;
+	void *map;
+	struct alloc_arena *new;
+
+	id = shmget ((int32_t)ctx->seq++, size, IPC_CREAT | IPC_EXCL | 0600);
+	if (id == -1) {
+		return NULL;
+	}
+
+	map = shmat (id, NULL, 0);
+	if (map == (void *)-1) {
+		return NULL;
+	}
+
+	new = calloc (1, sizeof (struct alloc_arena));
+	if (new == NULL) {
+		shmdt (map);
+	}
+
+	new->tag.seq = id;
+	new->begin = (uintptr_t)map;
+	return new;
+}
+
+
+/**
+ * Create and attach shared memory arena using posix shmem
+ * @param ctx context
+ * @param size size of arena to be created
+ * @return zero in case of success or -1 in case of error
+ */
+static int
+create_shared_arena (struct lt_linear_allocator_ctx *ctx, size_t size)
+{
+	struct alloc_arena *new;
+
+	if (ctx->use_sysv) {
+		new = create_shared_arena_sysv (ctx, size);
+	}
+	else {
+		new = create_shared_arena_posix (ctx, size);
 	}
 	new->chunk_cache = lt_objcache_create (sizeof (struct alloc_chunk));
-	new->begin = (uintptr_t)map;
 	new->last = new->begin + size;
 	new->len = size;
 	new->pos = align_ptr_platform (new->begin);
-	new->tag.seq = ctx->seq;
 	new->free = new->last - new->pos;
 	TAILQ_INIT (&new->chunks);
 	TAILQ_INSERT_TAIL (&ctx->arenas, new, link);
 
 	return 0;
 }
-
 
 static inline struct alloc_chunk*
 create_chunk (uintptr_t begin, size_t size, struct alloc_arena *ar, struct alloc_chunk *pos, int insert_pre)
@@ -396,6 +452,10 @@ linear_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq)
 	new->len = sizeof (struct lt_linear_allocator_ctx);
 	new->seq = init_seq;
 
+	if (getenv ("LTPROTO_USE_SYSV") != NULL) {
+		new->use_sysv = 1;
+	}
+
 	TAILQ_INIT (&new->arenas);
 
 	if (create_shared_arena (new, getpagesize () * default_arena_pages) == -1) {
@@ -441,15 +501,76 @@ linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_ta
 	return NULL;
 }
 
+static struct foreign_alloc_arena *
+attach_sysv_shmem_tag (struct lt_alloc_tag *tag)
+{
+	struct foreign_alloc_arena *far;
+	void *map;
+	struct shmid_ds ds;
+
+	map = shmat ((int32_t)tag->seq, NULL, 0);
+	if (map == (void *)-1) {
+		return NULL;
+	}
+
+	shmctl ((int32_t)tag->seq, IPC_STAT, &ds);
+
+	far = calloc (1, sizeof (struct foreign_alloc_arena));
+	if (far == NULL) {
+		shmdt (map);
+		return NULL;
+	}
+	far->begin = (uintptr_t)map;
+	far->len = ds.shm_segsz;
+	far->seq = tag->seq;
+
+	return far;
+}
+
+static struct foreign_alloc_arena *
+attach_posix_shmem_tag (struct lt_alloc_tag *tag)
+{
+	char arena_name[64];
+	struct stat st;
+	void *map;
+	int fd;
+	struct foreign_alloc_arena *far;
+
+	/* Try to attach zone */
+	snprintf (arena_name, sizeof (arena_name), "/lin_%lu", (long unsigned)tag->seq);
+	fd = shm_open (arena_name, O_RDONLY, 00600);
+	if (fd == -1) {
+		return NULL;
+	}
+
+	if (fstat (fd, &st) == -1) {
+		close (fd);
+		return NULL;
+	}
+
+	if ((map = mmap (NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED) {
+		close (fd);
+		return NULL;
+	}
+	close (fd);
+	far = calloc (1, sizeof (struct foreign_alloc_arena));
+	if (far == NULL) {
+		munmap (map, st.st_size);
+		return NULL;
+	}
+	far->begin = (uintptr_t)map;
+	far->len = st.st_size;
+	far->seq = tag->seq;
+
+	return far;
+}
+
 void *
 linear_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag)
 {
 	struct foreign_alloc_arena *far;
 	struct lt_linear_allocator_ctx *real_ctx = (struct lt_linear_allocator_ctx *)ctx;
-	char arena_name[64];
-	struct stat st;
-	void *map;
-	int fd;
+
 
 	HASH_FIND (hh, real_ctx->attached_arenas, &tag->seq, sizeof(tag->seq), far);
 
@@ -458,31 +579,12 @@ linear_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag)
 		return (void *)(far->begin + tag->id);
 	}
 	else {
-		/* Try to attach zone */
-		snprintf (arena_name, sizeof (arena_name), "/lin_%lu", (long unsigned)tag->seq);
-		fd = shm_open (arena_name, O_RDONLY, 00600);
-		if (fd == -1) {
-			return NULL;
+		if (real_ctx->use_sysv) {
+			far = attach_sysv_shmem_tag (tag);
 		}
-
-		if (fstat (fd, &st) == -1) {
-			close (fd);
-			return NULL;
+		else {
+			far = attach_posix_shmem_tag (tag);
 		}
-
-		if ((map = mmap (NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED) {
-			close (fd);
-			return NULL;
-		}
-		close (fd);
-		far = calloc (1, sizeof (struct foreign_alloc_arena));
-		if (far == NULL) {
-			munmap (map, st.st_size);
-			return NULL;
-		}
-		far->begin = (uintptr_t)map;
-		far->len = st.st_size;
-		far->seq = tag->seq;
 		HASH_ADD (hh, real_ctx->attached_arenas, seq, sizeof(far->seq), far);
 
 		assert (tag->id < far->len);
@@ -566,16 +668,26 @@ linear_destroy_func (struct lt_allocator_ctx *ctx)
 
 	/* Free all arenas and chunks */
 	TAILQ_FOREACH_SAFE (ar, &real_ctx->arenas, link, tmp_ar) {
-		munmap ((void *)ar->begin, ar->len);
+		if (real_ctx->use_sysv) {
+			shmdt ((void *)ar->begin);
+		}
+		else {
+			munmap ((void *)ar->begin, ar->len);
+			snprintf (arena_name, sizeof (arena_name), "/lin_%lu", (long unsigned)ar->tag.seq);
+			shm_unlink (arena_name);
+		}
 		lt_objcache_destroy (ar->chunk_cache);
 		HASH_ITER (hh, real_ctx->attached_arenas, far, far_tmp) {
-			munmap ((void *)far->begin, far->len);
+			if (real_ctx->use_sysv) {
+				shmdt ((void *)far->begin);
+			}
+			else {
+				munmap ((void *)far->begin, far->len);
+			}
 			HASH_DEL (real_ctx->attached_arenas, far);
 			free (far);
 
 		}
-		snprintf (arena_name, sizeof (arena_name), "/lin_%lu", (long unsigned)ar->tag.seq);
-		shm_unlink (arena_name);
 		free (ar);
 	}
 
