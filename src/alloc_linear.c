@@ -348,7 +348,7 @@ find_free_chunk (struct lt_linear_allocator_ctx *ctx, size_t size, struct alloc_
 		if (cur->len >= size && cur->len < minimal_size) {
 			sel = i;
 			minimal_size = cur->len;
-			if (minimal_size == cur->len) {
+			if (minimal_size == size) {
 				break;
 			}
 		}
