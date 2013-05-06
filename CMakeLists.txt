@@ -248,6 +248,52 @@ int main(int argc, char **argv) {
 }
 " HAVE_UNIX_SEQPACKET)
 
+CHECK_C_SOURCE_RUNS("
+int main(int argc, char **argv) {
+	int a = 0;
+	if (__sync_bool_compare_and_swap(&a, 0, 1)) {
+		return 0;
+	}
+	return -1;
+}
+" HAVE_ATOMIC_BUILTINS)
+
+IF(NOT HAVE_ATOMIC_BUILTINS)
+	MESSAGE(FATAL_ERROR "Atomic builtins are unsupported in compiler, cannot continue")
+ENDIF(NOT HAVE_ATOMIC_BUILTINS)
+
+CHECK_C_SOURCE_RUNS("
+int main(int argc, char **argv) {
+	int a = 0;
+	__asm __volatile(\"monitor\"
+	    :  \"=m\" (*(char *)&a)
+	    : \"a\" (&a), \"c\" (0), \"d\" (0));
+	return 0;
+}
+" HAVE_MONITOR_MWAIT)
+
+CHECK_C_SOURCE_RUNS("
+#include <linux/futex.h>
+#include <sys/time.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <errno.h>
+int main(int argc, char **argv) {
+	int a = 0;
+	struct timeval tv = {.tv_sec = 0, .tv_usec = 100};
+	
+	if (syscall(SYS_futex, &a, FUTEX_WAIT, 0, &tv, NULL, 0) == -1 && errno != ETIMEDOUT) {
+		return -1;
+	}
+	
+	return 0;
+}
+" HAVE_FUTEX)
+
+IF(NOT HAVE_MONITOR_MWAIT AND NOT HAVE_FUTEX)
+	MESSAGE(FATAL_ERROR "No spinning logic available, cannot continue (futexes and monitor/mwait are supported now)")
+ENDIF(NOT HAVE_MONITOR_MWAIT AND NOT HAVE_FUTEX)
+
 # Some dependencies
 IF(HAVE_SYS_WAIT_H)
     LIST(APPEND CMAKE_REQUIRED_INCLUDES sys/wait.h)

@@ -51,6 +51,9 @@
 #cmakedefine HAVE_SYS_CPUSET_H   1
 #cmakedefine HAVE_CPUSET_SETAFFINITY 1
 
+#cmakedefine HAVE_HAVE_MONITOR_MWAIT 1
+#cmakedefine HAVE_FUTEX	1
+
 /* sys/types */
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
