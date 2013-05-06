@@ -33,7 +33,7 @@
  * A module that uses shared memory for data transfer and unix socket for signalling.
  */
 
-#define DEFAULT_UNIX_SHMEM_SEGMENT (1024 * 1024)
+#define DEFAULT_UNIX_SHMEM_SEGMENT (512 * 1024)
 
 /**
  * Important notice: since we are implementing local transport it is assumed, that
@@ -282,40 +282,46 @@ unix_shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void
 	struct ltproto_unix_command *cmd, lcmd;
 	struct lt_unix_module_ctx *real_ctx = (struct lt_unix_module_ctx *)ctx;
 	int serrno;
+	size_t read = 0;
 	void *mem;
 
-	cmd = unix_shmem_recv_command (usk, &serrno);
+	while (read < len) {
+		cmd = unix_shmem_recv_command (usk, &serrno);
 
-	if (cmd != NULL) {
-		if (cmd->cmd == SHMEM_UNIX_CMD_FIN) {
-			/* Connection has been closed */
-			lt_objcache_free (real_ctx->cmd_cache, cmd);
-			return 0;
-		}
-		else if (cmd->cmd == SHMEM_UNIX_CMD_SEND) {
-			/* We have send request pending */
-			mem = real_ctx->lib_ctx->allocator->allocator_attachtag_func (real_ctx->lib_ctx->alloc_ctx,
-					&cmd->tag);
-			if (mem == NULL) {
-				/* Cannot attach memory for some reason */
-				serrno = EINVAL;
+		if (cmd != NULL) {
+			if (cmd->cmd == SHMEM_UNIX_CMD_FIN) {
+				/* Connection has been closed */
 				lt_objcache_free (real_ctx->cmd_cache, cmd);
+				return 0;
 			}
-			else {
-				/* XXX: just copy buffer assuming local and remote sizes are equal */
-				memcpy (buf, mem, len);
-				usk->unacked_bytes += len;
-				if (usk->unacked_bytes >= real_ctx->max_segment) {
-					lcmd.cmd = SHMEM_UNIX_CMD_ACK;
-					if (write (usk->fd, &lcmd, sizeof (lcmd)) == -1) {
-						lt_objcache_free (real_ctx->cmd_cache, cmd);
-						return -1;
-					}
-					usk->unacked_bytes = 0;
+			else if (cmd->cmd == SHMEM_UNIX_CMD_SEND) {
+				/* We have send request pending */
+				mem = real_ctx->lib_ctx->allocator->allocator_attachtag_func (real_ctx->lib_ctx->alloc_ctx,
+						&cmd->tag);
+				if (mem == NULL) {
+					/* Cannot attach memory for some reason */
+					serrno = EINVAL;
+					lt_objcache_free (real_ctx->cmd_cache, cmd);
 				}
+				else {
+					/* XXX: just copy buffer assuming local and remote sizes are equal */
+					read += cmd->len;
+					assert (read <= len);
+					memcpy (buf, mem, cmd->len);
+					usk->unacked_bytes += cmd->len;
+					if (usk->unacked_bytes >= real_ctx->max_segment) {
+						lcmd.cmd = SHMEM_UNIX_CMD_ACK;
+						if (write (usk->fd, &lcmd, sizeof (lcmd)) == -1) {
+							lt_objcache_free (real_ctx->cmd_cache, cmd);
+							return -1;
+						}
+						usk->unacked_bytes = 0;
+					}
+					buf = (void *)(((u_char *)buf) + cmd->len);
 
-				lt_objcache_free (real_ctx->cmd_cache, cmd);
-				return len;
+					lt_objcache_free (real_ctx->cmd_cache, cmd);
+					return len;
+				}
 			}
 		}
 	}
@@ -333,52 +339,56 @@ unix_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, con
 	struct lt_unix_module_ctx *real_ctx = (struct lt_unix_module_ctx *)ctx;
 	u_char *shared_data;
 	int serrno;
+	size_t written = 0, cur_seg;
 
-	lcmd.cmd = SHMEM_UNIX_CMD_SEND;
-	shared_data = real_ctx->lib_ctx->allocator->allocator_alloc_func (real_ctx->lib_ctx->alloc_ctx,
-			len, &lcmd.tag);
-	if (shared_data == NULL) {
-		errno = EAGAIN;
-		return -1;
-	}
-	memcpy (shared_data, buf, len);
-	lcmd.len = len;
 
-	if (write (usk->fd, &lcmd, sizeof (lcmd)) == -1) {
-		return -1;
-	}
-	usk->unacked_bytes += len;
-	if (usk->unacked_bytes >= real_ctx->max_segment) {
-		cmd = unix_shmem_recv_command (usk, &serrno);
-		if (cmd != NULL) {
-			/* XXX: Check cookie */
-			usk->unacked_bytes = 0;
-
-			/* Free all chunks pending */
-			unacked_chunk = usk->unacked_chunks;
-			while (unacked_chunk != NULL) {
-				real_ctx->lib_ctx->allocator->allocator_free_func (real_ctx->lib_ctx->alloc_ctx,
-									unacked_chunk->addr, unacked_chunk->len);
-				tmp = unacked_chunk;
-				unacked_chunk = unacked_chunk->next;
-				lt_objcache_free (real_ctx->chunks_cache, tmp);
-			}
-			usk->unacked_chunks = NULL;
-			real_ctx->lib_ctx->allocator->allocator_free_func (real_ctx->lib_ctx->alloc_ctx,
-					shared_data, len);
-			lt_objcache_free (real_ctx->cmd_cache, cmd);
-			return len;
+	while (written < len) {
+		cur_seg = MIN (real_ctx->max_segment, len);
+		lcmd.cmd = SHMEM_UNIX_CMD_SEND;
+		shared_data = real_ctx->lib_ctx->allocator->allocator_alloc_func (real_ctx->lib_ctx->alloc_ctx,
+				cur_seg, &lcmd.tag);
+		if (shared_data == NULL) {
+			errno = EAGAIN;
+			return -1;
 		}
+		memcpy (shared_data, buf, cur_seg);
+		lcmd.len = cur_seg;
+
+		if (write (usk->fd, &lcmd, sizeof (lcmd)) == -1) {
+			return -1;
+		}
+		usk->unacked_bytes += cur_seg;
+		if (usk->unacked_bytes >= real_ctx->max_segment) {
+			cmd = unix_shmem_recv_command (usk, &serrno);
+			if (cmd != NULL) {
+				/* XXX: Check cookie */
+				usk->unacked_bytes = 0;
+
+				/* Free all chunks pending */
+				unacked_chunk = usk->unacked_chunks;
+				while (unacked_chunk != NULL) {
+					real_ctx->lib_ctx->allocator->allocator_free_func (real_ctx->lib_ctx->alloc_ctx,
+							unacked_chunk->addr, unacked_chunk->len);
+					tmp = unacked_chunk;
+					unacked_chunk = unacked_chunk->next;
+					lt_objcache_free (real_ctx->chunks_cache, tmp);
+				}
+				usk->unacked_chunks = NULL;
+				real_ctx->lib_ctx->allocator->allocator_free_func (real_ctx->lib_ctx->alloc_ctx,
+						shared_data, cur_seg);
+				lt_objcache_free (real_ctx->cmd_cache, cmd);
+			}
+		}
+		else {
+			unacked_chunk = lt_objcache_alloc (real_ctx->chunks_cache);
+			unacked_chunk->addr = shared_data;
+			unacked_chunk->len = cur_seg;
+			unacked_chunk->next = usk->unacked_chunks;
+			usk->unacked_chunks = unacked_chunk;
+		}
+		written += cur_seg;
 	}
-	else {
-		unacked_chunk = lt_objcache_alloc (real_ctx->chunks_cache);
-		unacked_chunk->addr = shared_data;
-		unacked_chunk->len = len;
-		unacked_chunk->next = usk->unacked_chunks;
-		usk->unacked_chunks = unacked_chunk;
-		return len;
-	}
-	return -1;
+	return len;
 }
 
 int
