@@ -58,37 +58,6 @@
 
 #define SK_ARRAY_BUCKETS 1024
 
-#if     __GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 8)
-#  define _GNUC_EXTENSION __extension__
-#else
-#  define _GNUC_EXTENSION
-#endif
-
-#ifdef __GNUC__
-#define lt_ptr_atomic_get(ptr) 								\
-  (_GNUC_EXTENSION ({										\
-    __sync_synchronize ();									\
-    (void *) *(ptr);										\
-  }))
-#define lt_ptr_atomic_set(ptr, nptr)						\
-  (_GNUC_EXTENSION ({										\
-    (void) (0 ? (void *) *(ptr) : 0);						\
-    *(ptr) = (__typeof__ (*(ptr))) (uintptr_t) (nptr);		\
-    __sync_synchronize ();									\
-  }))
-#else
-/* We have no gnuc intriniscs for memory barriers */
-#define lt_ptr_atomic_get(ptr) 								\
-  (_GNUC_EXTENSION ({										\
-    (void *) *(ptr);										\
-  }))
-#define lt_ptr_atomic_set(ptr, nptr)						\
-  (_GNUC_EXTENSION ({										\
-    (void) (0 ? (void *) *(ptr) : 0);						\
-    *(ptr) = (__typeof__ (*(ptr))) (uintptr_t) (nptr);		\
-  }))
-#endif
-
 
 /**
  * Forwarded declarations

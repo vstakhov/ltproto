@@ -31,6 +31,37 @@
  * General function utilities for ltproto
  */
 
+#if     __GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 8)
+#  define _GNUC_EXTENSION __extension__
+#else
+#  define _GNUC_EXTENSION
+#endif
+
+#ifdef __GNUC__
+#define lt_ptr_atomic_get(ptr) 								\
+  (_GNUC_EXTENSION ({										\
+    __sync_synchronize ();									\
+    (void *) *(ptr);										\
+  }))
+#define lt_ptr_atomic_set(ptr, nptr)						\
+  (_GNUC_EXTENSION ({										\
+    (void) (0 ? (void *) *(ptr) : 0);						\
+    *(ptr) = (__typeof__ (*(ptr))) (uintptr_t) (nptr);		\
+    __sync_synchronize ();									\
+  }))
+#else
+/* We have no gnuc intriniscs for memory barriers */
+#define lt_ptr_atomic_get(ptr) 								\
+  (_GNUC_EXTENSION ({										\
+    (void *) *(ptr);										\
+  }))
+#define lt_ptr_atomic_set(ptr, nptr)						\
+  (_GNUC_EXTENSION ({										\
+    (void) (0 ? (void *) *(ptr) : 0);						\
+    *(ptr) = (__typeof__ (*(ptr))) (uintptr_t) (nptr);		\
+  }))
+#endif
+
 /**
  * Initialise pseudo random generator
  * @return opaque data pointer that must be freed by caller
@@ -58,5 +89,22 @@ int get_random_int (void *data);
 
 #define msec_to_tv(msec, tv) do { (tv)->tv_sec = (msec) / 1000; (tv)->tv_usec = ((msec) - (tv)->tv_sec * 1000) * 1000; } while(0)
 #define tv_to_msec(tv) (tv)->tv_sec * 1000 + (tv)->tv_usec / 1000
+
+/**
+ * Wait for memory at pointer to fit specific value
+ * @param ptr pointer to wait
+ * @param value value to wait
+ * @param newvalue new value to set
+ * @return value got or -1 in case of error
+ */
+int wait_for_memory (volatile int *ptr, int value, int newvalue);
+
+/**
+ * Atomically set new value to the pointer and wake up futexes (if any)
+ * @param ptr pointer to set
+ * @param newvalue new value
+ * @return old value or -1 in case of errror
+ */
+int signal_memory (volatile int *ptr, int newvalue);
 
 #endif /* UTIL_H_ */

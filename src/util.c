@@ -27,7 +27,10 @@
 #ifdef HAVE_OPENSSL
 #include <openssl/rand.h>
 #endif
-
+#ifdef HAVE_FUTEX
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#endif
 /**
  * Initialise pseudo random generator
  */
@@ -127,4 +130,51 @@ get_random_int (void *data)
 	*p = rand();
 #endif
 	return res;
+}
+
+
+int
+wait_for_memory (volatile int *ptr, int value, int newvalue)
+{
+	if (!__sync_bool_compare_and_swap (ptr, value, newvalue)) {
+		/* Need to spin */
+#ifdef HAVE_FUTEX
+		for (;;) {
+			if (syscall (SYS_futex, ptr, FUTEX_WAIT, value, NULL, NULL, 0) == -1) {
+				return -1;
+			}
+			if (__sync_bool_compare_and_swap (ptr, value, newvalue)) {
+				break;
+			}
+		}
+#elif defined(HAVE_HAVE_MONITOR_MWAIT)
+		for (;;) {
+			__asm __volatile("monitor"
+				    :  "=m" (*(char *)&ptr)
+				    : "a" (ptr), "c" (0), "d" (0));
+			if (__sync_bool_compare_and_swap (ptr, value, newvalue)) {
+				break;
+			}
+			__asm __volatile("mwait"
+					:
+					: "a" (0), "c" (0));
+		}
+#else
+# error "No spinning logic defined"
+#endif
+	}
+
+	return value;
+}
+
+int
+signal_memory (volatile int *ptr, int newvalue)
+{
+	lt_ptr_atomic_set (ptr, newvalue);
+#ifdef HAVE_FUTEX
+	if (syscall (SYS_futex, ptr, FUTEX_WAKE, 1, NULL, NULL, 0) == -1) {
+		return -1;
+	}
+#endif
+	return 0;
 }
