@@ -31,6 +31,9 @@
 #include <linux/futex.h>
 #include <sys/syscall.h>
 #endif
+#ifdef HAVE_UMTX_OP
+#include <sys/umtx.h>
+#endif
 /**
  * Initialise pseudo random generator
  */
@@ -147,6 +150,15 @@ wait_for_memory (volatile int *ptr, int value, int newvalue)
 				break;
 			}
 		}
+#elif defined(HAVE_UMTX_OP)
+		for (;;) {
+			if (_umtx_op ((void *)ptr, UMTX_OP_WAIT_UINT, value, 0, NULL) == -1) {
+				return -1;
+			}
+			if (__sync_bool_compare_and_swap (ptr, value, newvalue)) {
+				break;
+			}
+		}
 #elif defined(HAVE_HAVE_MONITOR_MWAIT)
 		for (;;) {
 			__asm __volatile("monitor"
@@ -173,6 +185,10 @@ signal_memory (volatile int *ptr, int newvalue)
 	lt_ptr_atomic_set (ptr, newvalue);
 #ifdef HAVE_FUTEX
 	if (syscall (SYS_futex, ptr, FUTEX_WAKE, 1, NULL, NULL, 0) == -1) {
+		return -1;
+	}
+#elif defined(HAVE_UMTX_OP)
+	if (_umtx_op ((void *)ptr, UMTX_OP_WAKE, 1, 0, 0) == -1) {
 		return -1;
 	}
 #endif
