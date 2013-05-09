@@ -137,35 +137,93 @@ get_random_int (void *data)
 
 
 int
-wait_for_memory (volatile int *ptr, int value, int newvalue)
+wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value)
 {
-	if (!__sync_bool_compare_and_swap (ptr, value, newvalue)) {
+	int val;
+
+	for (;;) {
+		val = lt_int_atomic_get (ptr);
+
+		if (val == desired_value) {
+			break;
+		}
 		/* Need to spin */
 #ifdef HAVE_FUTEX
-		for (;;) {
-			if (syscall (SYS_futex, ptr, FUTEX_WAIT, value, NULL, NULL, 0) == -1) {
+		if (val == wait_value || __sync_bool_compare_and_swap (ptr, val, wait_value)) {
+			if (syscall (SYS_futex, ptr, FUTEX_WAIT, wait_value, NULL, NULL, 0) == -1) {
 				return -1;
-			}
-			if (__sync_bool_compare_and_swap (ptr, value, newvalue)) {
-				break;
 			}
 		}
 #elif defined(HAVE_UMTX_OP)
-		for (;;) {
-			if (_umtx_op ((void *)ptr, UMTX_OP_WAIT_UINT, value, 0, NULL) == -1) {
+		if (val == wait_value || __sync_bool_compare_and_swap (ptr, val, wait_value)) {
+			if (_umtx_op ((void *)ptr, UMTX_OP_WAIT_UINT, wait_value, 0, NULL) == -1) {
 				return -1;
-			}
-			if (__sync_bool_compare_and_swap (ptr, value, newvalue)) {
-				break;
 			}
 		}
 #elif defined(HAVE_HAVE_MONITOR_MWAIT)
 		for (;;) {
+			if (val == wait_value || __sync_bool_compare_and_swap (ptr, val, wait_value)) {
+				__asm __volatile("monitor"
+						:  "=m" (*(char *)&ptr)
+						: "a" (ptr), "c" (0), "d" (0));
+				val = lt_ptr_atomic_get (ptr);
+				if (val == desired_value) {
+					return 0;
+				}
+				__asm __volatile("mwait"
+						:
+						: "a" (0), "c" (0));
+			}
+		}
+#else
+# error "No spinning logic defined"
+#endif
+	}
+
+	return 0;
+}
+
+
+/**
+ * Wait for memory at pointer to get desired value, not changing state
+ * @param ptr pointer to wait
+ * @param desired_value value to wait
+ * @return value got or -1 in case of error
+ */
+int
+wait_for_memory_passive (volatile int *ptr, int desired_value)
+{
+	int val;
+
+	for (;;) {
+		val = lt_int_atomic_get (ptr);
+
+		if (val == desired_value) {
+			break;
+		}
+		/* Need to spin */
+#ifdef HAVE_FUTEX
+		if (syscall (SYS_futex, ptr, FUTEX_WAIT, val, NULL, NULL, 0) == -1) {
+			if (errno == EWOULDBLOCK) {
+				continue;
+			}
+			return -1;
+		}
+#elif defined(HAVE_UMTX_OP)
+		if (_umtx_op ((void *)ptr, UMTX_OP_WAIT_UINT, val, 0, NULL) == -1) {
+			if (errno == EWOULDBLOCK) {
+				continue;
+			}
+			return -1;
+		}
+#elif defined(HAVE_HAVE_MONITOR_MWAIT)
+		for (;;) {
 			__asm __volatile("monitor"
-				    :  "=m" (*(char *)&ptr)
-				    : "a" (ptr), "c" (0), "d" (0));
-			if (__sync_bool_compare_and_swap (ptr, value, newvalue)) {
-				break;
+					:  "=m" (*(char *)&ptr)
+					   : "a" (ptr), "c" (0), "d" (0));
+			val = lt_int_atomic_get (ptr);
+			if (val == desired_value) {
+				return 0;
 			}
 			__asm __volatile("mwait"
 					:
@@ -176,7 +234,7 @@ wait_for_memory (volatile int *ptr, int value, int newvalue)
 #endif
 	}
 
-	return value;
+	return 0;
 }
 
 int

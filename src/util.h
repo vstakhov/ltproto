@@ -38,22 +38,21 @@
 #endif
 
 #ifdef __GNUC__
-#define lt_ptr_atomic_get(ptr) 								\
+#define lt_int_atomic_get(ptr) 								\
   (_GNUC_EXTENSION ({										\
     __sync_synchronize ();									\
-    (void *) *(ptr);										\
+    (int) *(ptr);										\
   }))
 #define lt_ptr_atomic_set(ptr, nptr)						\
   (_GNUC_EXTENSION ({										\
-    (void) (0 ? (void *) *(ptr) : 0);						\
     *(ptr) = (__typeof__ (*(ptr))) (uintptr_t) (nptr);		\
     __sync_synchronize ();									\
   }))
 #else
 /* We have no gnuc intriniscs for memory barriers */
-#define lt_ptr_atomic_get(ptr) 								\
+#define lt_int_atomic_get(ptr) 								\
   (_GNUC_EXTENSION ({										\
-    (void *) *(ptr);										\
+    (int) *(ptr);										\
   }))
 #define lt_ptr_atomic_set(ptr, nptr)						\
   (_GNUC_EXTENSION ({										\
@@ -91,13 +90,21 @@ int get_random_int (void *data);
 #define tv_to_msec(tv) (tv)->tv_sec * 1000 + (tv)->tv_usec / 1000
 
 /**
- * Wait for memory at pointer to fit specific value
+ * Wait for memory at pointer to get desired value, changing state to wait state while waiting
  * @param ptr pointer to wait
- * @param value value to wait
- * @param newvalue new value to set
+ * @param desired_value value to wait
+ * @param wait_value set this value while waiting
  * @return value got or -1 in case of error
  */
-int wait_for_memory (volatile int *ptr, int value, int newvalue);
+int wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value);
+
+/**
+ * Wait for memory at pointer to get desired value, not changing state
+ * @param ptr pointer to wait
+ * @param desired_value value to wait
+ * @return value got or -1 in case of error
+ */
+int wait_for_memory_passive (volatile int *ptr, int desired_value);
 
 /**
  * Atomically set new value to the pointer and wake up futexes (if any)
