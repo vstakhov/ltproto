@@ -364,8 +364,9 @@ SET(LTPROTO_SRC src/ltproto.c
 SET(MODULES_SRC src/null.c 
 				src/udp_shmem.c
 				src/unix_socket.c
-				src/unix_shmem.c)
-SET(MODULES_LIST null udp_shmem unix unix_shmem)
+				src/unix_shmem.c
+				src/shmem.c)
+SET(MODULES_LIST null udp_shmem unix unix_shmem shmem)
 
 SET(ALLOCATORS_SRC	src/alloc_linear.c 
 					src/alloc_system.c)
