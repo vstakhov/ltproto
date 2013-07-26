@@ -21,30 +21,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-
-/* Copyright (c) 2013, Vsevolod Stakhov
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *       * Redistributions of source code must retain the above copyright
- *         notice, this list of conditions and the following disclaimer.
- *       * Redistributions in binary form must reproduce the above copyright
- *         notice, this list of conditions and the following disclaimer in the
- *         documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED ''AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL AUTHOR BE LIABLE FOR ANY
- * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
 #include "config.h"
 #include "ltproto.h"
 #include "ltproto_internal.h"
@@ -55,7 +31,9 @@
  * @section DESCRIPTION
  *
  * This module implements the pure shared memory channel using futexes or sleep
- * for synchronization
+ * for synchronization.
+ * We use an ordinary TCP socket for accept and listen for a connection.
+ * Connecting socket is responsible for allocating shmem ring.
  */
 
 int shmem_init_func (struct lt_module_ctx **ctx);
@@ -88,12 +66,52 @@ module_t shmem_module = {
 		.module_destroy_func = shmem_destroy_func
 };
 
+#define LT_DEFAULT_SLOTS 10
+#define LT_DEFAULT_BUF 32768
+
+struct lt_net_ring_slot {
+	unsigned int len;
+	unsigned int flags;
+#define LT_SLOT_FLAG_READY 0x1
+};
+
+struct lt_net_ring {
+	unsigned int num_slots;
+	unsigned int cur;
+	unsigned int avail;
+
+	size_t buf_offset;
+	size_t buf_size;
+
+	struct lt_net_ring_slot slot[0];
+};
+
+#define LT_RING_BUF(ring, index)                         \
+        ((char *)(ring) + (ring)->buf_offset + ((index)*(ring)->buf_size))
+
+#define LT_RING_NEXT(r, i)                               \
+        ((i)+1 == (r)->num_slots ? 0 : (i) + 1 )
+#define LT_RING_SIZE(slots, bufsize)                     \
+        (sizeof (struct lt_net_ring) + sizeof (struct lt_net_ring_slot) * (slots) +  \
+        (bufsize) * (slots))
+
+struct ltproto_socket_shmem {
+	int fd;							// Socket descriptor
+	int tcp_fd;						// TCP link socket
+	struct ltproto_module *mod;		// Module handling this socket
+	UT_hash_handle hh;				// Hash entry
+
+	struct lt_net_ring *ring;		// General ring
+	struct lt_alloc_tag tag;		// Connected tag
+};
+
+
 int
 shmem_init_func (struct lt_module_ctx **ctx)
 {
 	*ctx = calloc (1, sizeof (struct lt_module_ctx));
 	(*ctx)->len = sizeof (struct lt_module_ctx);
-	(*ctx)->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket));
+	(*ctx)->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_shmem));
 
 	return 0;
 }
@@ -101,29 +119,23 @@ shmem_init_func (struct lt_module_ctx **ctx)
 struct ltproto_socket *
 shmem_socket_func (struct lt_module_ctx *ctx)
 {
-	struct ltproto_socket *sk;
+	struct ltproto_socket_shmem *sk;
 
 	sk = lt_objcache_alloc (ctx->sk_cache);
 	assert (sk != NULL);
-	sk->fd = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (sk->fd == -1) {
-		lt_objcache_free (ctx->sk_cache, sk);
-		return NULL;
-	}
 
-	return sk;
+	return (struct ltproto_socket *)sk;
 }
 
 int
 shmem_setopts_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue)
 {
-	return setsockopt (sk->fd, SOL_SOCKET, optname, &optvalue, sizeof (optvalue));
+	return setsockopt (sk->tcp_fd, SOL_SOCKET, optname, &optvalue, sizeof (optvalue));
 }
 
 int
 shmem_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
-
 	return 0;
 }
 
@@ -136,24 +148,47 @@ shmem_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int bac
 struct ltproto_socket *
 shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen)
 {
-	struct ltproto_socket *nsk;
-	int afd;
-
-	afd = dup (sk->fd);
-	if (afd == -1) {
-		return NULL;
-	}
+	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk, *nsk;
 
 	nsk = lt_objcache_alloc (ctx->sk_cache);
 	assert (nsk != NULL);
-	nsk->fd = afd;
 
-	return nsk;
+	/* Read tag to allocate */
+	if (read (ssk->tcp_fd, &nsk->tag, sizeof (nsk->tag)) == -1) {
+		lt_objcache_free (ctx->sk_cache, nsk);
+		return NULL;
+	}
+	/* Attach ring */
+	nsk->ring = ctx->lib_ctx->allocator->allocator_attachtag_func (ctx->lib_ctx->alloc_ctx,
+			&nsk->tag);
+
+	if (nsk->ring == NULL) {
+		lt_objcache_free (ctx->sk_cache, nsk);
+		return NULL;
+	}
+
+	return (struct ltproto_socket *)nsk;
 }
 
 int
 shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
+	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk;
+
+	ssk->ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
+			LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag);
+
+	if (ssk->ring == NULL) {
+		return -1;
+	}
+
+	/* Send tag */
+	if (write (ssk->tcp_fd, &ssk->tag, sizeof (ssk->tag)) == -1) {
+		ctx->lib_ctx->allocator->allocator_free_func (ctx->lib_ctx->alloc_ctx,
+				&ssk->tag, sizeof (ssk->tag));
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -190,14 +225,9 @@ shmem_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short w
 int
 shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
-	int serrno, ret;
-
-	ret = close (sk->fd);
-	serrno = errno;
 	lt_objcache_free (ctx->sk_cache, sk);
-	errno = serrno;
 
-	return ret;
+	return 0;
 }
 
 int
