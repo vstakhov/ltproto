@@ -101,8 +101,9 @@ struct ltproto_socket_shmem {
 	struct ltproto_module *mod;		// Module handling this socket
 	UT_hash_handle hh;				// Hash entry
 
-	struct lt_net_ring *ring;		// General ring
-	struct lt_alloc_tag tag;		// Connected tag
+	struct lt_net_ring *rx_ring;	// Input
+	struct lt_net_ring *tx_ring;	// Output
+	struct lt_alloc_tag tag[2];		// Connected tags
 };
 
 
@@ -154,15 +155,17 @@ shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct 
 	assert (nsk != NULL);
 
 	/* Read tag to allocate */
-	if (read (ssk->tcp_fd, &nsk->tag, sizeof (nsk->tag)) == -1) {
+	if (read (ssk->tcp_fd, &nsk->tag, sizeof (ssk->tag[0]) * 2) == -1) {
 		lt_objcache_free (ctx->sk_cache, nsk);
 		return NULL;
 	}
 	/* Attach ring */
-	nsk->ring = ctx->lib_ctx->allocator->allocator_attachtag_func (ctx->lib_ctx->alloc_ctx,
-			&nsk->tag);
+	nsk->rx_ring = ctx->lib_ctx->allocator->allocator_attachtag_func (ctx->lib_ctx->alloc_ctx,
+			&nsk->tag[0]);
+	nsk->tx_ring = ctx->lib_ctx->allocator->allocator_attachtag_func (ctx->lib_ctx->alloc_ctx,
+				&nsk->tag[1]);
 
-	if (nsk->ring == NULL) {
+	if (nsk->rx_ring == NULL || nsk->tx_ring == NULL) {
 		lt_objcache_free (ctx->sk_cache, nsk);
 		return NULL;
 	}
@@ -175,15 +178,18 @@ shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const 
 {
 	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk;
 
-	ssk->ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
-			LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag);
+	/* Inverse the order of tags */
+	ssk->rx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
+			LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[1]);
+	ssk->tx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
+				LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[0]);
 
-	if (ssk->ring == NULL) {
+	if (ssk->rx_ring == NULL || ssk->tx_ring == NULL) {
 		return -1;
 	}
 
 	/* Send tag */
-	if (write (ssk->tcp_fd, &ssk->tag, sizeof (ssk->tag)) == -1) {
+	if (write (ssk->tcp_fd, &ssk->tag, sizeof (ssk->tag[0]) * 2) == -1) {
 		ctx->lib_ctx->allocator->allocator_free_func (ctx->lib_ctx->alloc_ctx,
 				&ssk->tag, sizeof (ssk->tag));
 		return -1;
