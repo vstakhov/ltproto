@@ -103,6 +103,8 @@ struct ltproto_socket_shmem {
 
 	struct lt_net_ring *rx_ring;	// Input
 	struct lt_net_ring *tx_ring;	// Output
+	unsigned int cur_rx;			// Current RX slot
+	unsigned int cur_tx;			// Current TX slot
 	struct lt_alloc_tag tag[2];		// Connected tags
 };
 
@@ -124,6 +126,7 @@ shmem_socket_func (struct lt_module_ctx *ctx)
 
 	sk = lt_objcache_alloc (ctx->sk_cache);
 	assert (sk != NULL);
+	memset (sk, 0, sizeof (*sk));
 
 	return (struct ltproto_socket *)sk;
 }
@@ -188,6 +191,16 @@ shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const 
 		return -1;
 	}
 
+	memset (ssk->tx_ring, 0, LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF));
+	memset (ssk->rx_ring, 0, LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF));
+
+	ssk->rx_ring->buf_size = LT_DEFAULT_BUF;
+	ssk->tx_ring->buf_size = LT_DEFAULT_BUF;
+	ssk->rx_ring->buf_offset = offsetof(struct lt_net_ring, slot) +
+			LT_DEFAULT_SLOTS * sizeof (struct lt_net_ring_slot);
+	ssk->tx_ring->buf_offset = offsetof(struct lt_net_ring, slot) +
+				LT_DEFAULT_SLOTS * sizeof (struct lt_net_ring_slot);
+
 	/* Send tag */
 	if (write (ssk->tcp_fd, &ssk->tag, sizeof (ssk->tag[0]) * 2) == -1) {
 		ctx->lib_ctx->allocator->allocator_free_func (ctx->lib_ctx->alloc_ctx,
@@ -199,9 +212,49 @@ shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const 
 }
 
 ssize_t
-shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len)
+shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t orig_len)
 {
-	/* Force TCP connection */
+	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk;
+	struct lt_net_ring_slot *slot;
+	unsigned char *cur;
+	unsigned int len = orig_len;
+
+	if (ssk->rx_ring == NULL) {
+		/* Force TCP connection */
+		return -1;
+	}
+
+	cur = buf;
+
+	for (;;) {
+		slot = &ssk->rx_ring->slot[ssk->cur_rx];
+		if (wait_for_memory_passive (&slot->flags, LT_SLOT_FLAG_READY) == -1) {
+			return -1;
+		}
+		if (slot->len < len) {
+			memcpy (cur, LT_RING_BUF (ssk->rx_ring, ssk->cur_rx), slot->len);
+			cur += slot->len;
+			len -= slot->len;
+			ssk->cur_rx = LT_RING_NEXT (ssk->rx_ring, ssk->cur_rx);
+			signal_memory (&slot->flags, 0);
+		}
+		else {
+			memcpy (cur, LT_RING_BUF (ssk->rx_ring, ssk->cur_rx), len);
+			if (len == slot->len) {
+				/* Aligned case */
+				ssk->cur_rx = LT_RING_NEXT (ssk->rx_ring, ssk->cur_rx);
+				signal_memory (&slot->flags, 0);
+			}
+			else {
+				memcpy (LT_RING_BUF (ssk->rx_ring, ssk->cur_rx),
+						LT_RING_BUF (ssk->rx_ring, ssk->cur_rx) + slot->len,
+						ssk->rx_ring->buf_size - slot->len);
+			}
+			return orig_len;
+		}
+	}
+
+	/* Not reached */
 	return -1;
 }
 
