@@ -66,8 +66,8 @@ module_t shmem_module = {
 		.module_destroy_func = shmem_destroy_func
 };
 
-#define LT_DEFAULT_SLOTS 10
-#define LT_DEFAULT_BUF 32768
+#define LT_DEFAULT_SLOTS 16
+#define LT_DEFAULT_BUF 8192
 
 struct lt_net_ring_slot {
 	unsigned int len;
