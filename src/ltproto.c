@@ -223,7 +223,7 @@ ltproto_accept (struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *add
 	struct ltproto_socket *ask;
 	struct sockaddr_storage st;
 	socklen_t st_len = sizeof (st);
-	int tcp_fd;
+	int tcp_fd, tmp;
 
 	assert (lib_ctx != NULL);
 
@@ -232,7 +232,11 @@ ltproto_accept (struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *add
 		if (tcp_fd == -1) {
 			return NULL;
 		}
+		/* XXX: dirty hack to allow accept_func to manipulate with an accepted TCP fd */
+		tmp = sk->tcp_fd;
+		sk->tcp_fd = tcp_fd;
 		ask = sk->mod->mod->module_accept_func (sk->mod->ctx, sk, addr, addrlen);
+		sk->tcp_fd = tmp;
 		if (ask != NULL) {
 			ask->tcp_fd = tcp_fd;
 			ask->mod = sk->mod;

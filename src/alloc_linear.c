@@ -538,7 +538,7 @@ attach_posix_shmem_tag (struct lt_alloc_tag *tag)
 
 	/* Try to attach zone */
 	snprintf (arena_name, sizeof (arena_name), "/lin_%lu", (long unsigned)tag->seq);
-	fd = shm_open (arena_name, O_RDONLY, 00600);
+	fd = shm_open (arena_name, O_RDWR, 00600);
 	if (fd == -1) {
 		return NULL;
 	}
@@ -548,7 +548,7 @@ attach_posix_shmem_tag (struct lt_alloc_tag *tag)
 		return NULL;
 	}
 
-	if ((map = mmap (NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED) {
+	if ((map = mmap (NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)) == MAP_FAILED) {
 		close (fd);
 		return NULL;
 	}

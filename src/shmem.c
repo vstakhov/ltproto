@@ -108,6 +108,15 @@ struct ltproto_socket_shmem {
 	struct lt_alloc_tag tag[2];		// Connected tags
 };
 
+static void
+shmem_init_ring (struct lt_net_ring *ring, int nslots, int bufsize)
+{
+	memset (ring, 0, LT_RING_SIZE (nslots, bufsize));
+	ring->buf_size = bufsize;
+	ring->buf_offset = offsetof(struct lt_net_ring, slot) +
+				nslots * sizeof (struct lt_net_ring_slot);
+	ring->num_slots = nslots;
+}
 
 int
 shmem_init_func (struct lt_module_ctx **ctx)
@@ -191,15 +200,8 @@ shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const 
 		return -1;
 	}
 
-	memset (ssk->tx_ring, 0, LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF));
-	memset (ssk->rx_ring, 0, LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF));
-
-	ssk->rx_ring->buf_size = LT_DEFAULT_BUF;
-	ssk->tx_ring->buf_size = LT_DEFAULT_BUF;
-	ssk->rx_ring->buf_offset = offsetof(struct lt_net_ring, slot) +
-			LT_DEFAULT_SLOTS * sizeof (struct lt_net_ring_slot);
-	ssk->tx_ring->buf_offset = offsetof(struct lt_net_ring, slot) +
-				LT_DEFAULT_SLOTS * sizeof (struct lt_net_ring_slot);
+	shmem_init_ring (ssk->rx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
+	shmem_init_ring (ssk->tx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
 
 	/* Send tag */
 	if (write (ssk->tcp_fd, &ssk->tag, sizeof (ssk->tag[0]) * 2) == -1) {
@@ -259,9 +261,41 @@ shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf
 }
 
 ssize_t
-shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len)
+shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t orig_len)
 {
-	/* Force TCP connection */
+	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk;
+	struct lt_net_ring_slot *slot;
+	const unsigned char *cur;
+	unsigned int len = orig_len;
+
+	if (ssk->tx_ring == NULL) {
+		/* Force TCP connection */
+		return -1;
+	}
+
+	cur = buf;
+
+	for (;;) {
+		slot = &ssk->tx_ring->slot[ssk->cur_tx];
+		if (wait_for_memory_passive (&slot->flags, 0) == -1) {
+			return -1;
+		}
+		if (ssk->tx_ring->buf_size < len) {
+			memcpy (LT_RING_BUF (ssk->tx_ring, ssk->cur_tx), cur, ssk->tx_ring->buf_size);
+			cur += slot->len;
+			len -= slot->len;
+			ssk->cur_tx = LT_RING_NEXT (ssk->tx_ring, ssk->cur_tx);
+			slot->len = ssk->tx_ring->buf_size;
+			signal_memory (&slot->flags, LT_SLOT_FLAG_READY);
+		}
+		else {
+			memcpy (LT_RING_BUF (ssk->tx_ring, ssk->cur_tx), cur, len);
+			ssk->cur_tx = LT_RING_NEXT (ssk->tx_ring, ssk->cur_tx);
+			slot->len = len;
+			signal_memory (&slot->flags, LT_SLOT_FLAG_READY);
+			return orig_len;
+		}
+	}
 	return -1;
 }
 

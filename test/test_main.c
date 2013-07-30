@@ -344,6 +344,11 @@ static struct {
 				"unix_shmem",
 				"Unix socket + shared memory module",
 				1
+		},
+		{
+				"shmem",
+				"Shared memory channel, synced by mutexes",
+				1
 		}
 };
 
