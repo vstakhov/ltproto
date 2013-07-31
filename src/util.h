@@ -112,7 +112,7 @@ int wait_for_memory_passive (volatile int *ptr, int desired_value);
  * @param desired_value value to wait
  * @return value got or -1 in case of error
  */
-int wait_for_memory_sleep (volatile int *ptr, int desired_value);
+int wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec);
 
 /**
  * Atomically set new value to the pointer and wake up futexes (if any)

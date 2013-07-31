@@ -66,7 +66,7 @@ module_t shmem_sleep_module = {
 		.module_destroy_func = shmem_sleep_destroy_func
 };
 
-#define LT_DEFAULT_SLOTS 128
+#define LT_DEFAULT_SLOTS 256
 #define LT_DEFAULT_BUF 4096
 
 struct lt_net_ring_slot {
@@ -239,14 +239,11 @@ shmem_sleep_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, voi
 
 	for (;;) {
 		if (ssk->rx_ring->ref == 1) {
-			if (ssk->ring_owner) {
-				ctx->lib_ctx->allocator->allocator_free_func (ctx->lib_ctx->alloc_ctx,
-						ssk->rx_ring, LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF));
-			}
 			return 0;
 		}
+		//fprintf (stderr, "read: %d\n", ssk->cur_rx);
 		slot = &ssk->rx_ring->slot[ssk->cur_rx];
-		if (wait_for_memory_sleep (&slot->flags, LT_SLOT_FLAG_READY) == -1) {
+		if (wait_for_memory_sleep (&slot->flags, LT_SLOT_FLAG_READY, 20000) == -1) {
 			return -1;
 		}
 		if (slot->len < len) {
@@ -293,7 +290,8 @@ shmem_sleep_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, co
 
 	for (;;) {
 		slot = &ssk->tx_ring->slot[ssk->cur_tx];
-		if (wait_for_memory_sleep (&slot->flags, 0) == -1) {
+		//fprintf (stderr, "write: %d\n", ssk->cur_tx);
+		if (wait_for_memory_sleep (&slot->flags, 0, 10000) == -1) {
 			return -1;
 		}
 		if (ssk->tx_ring->buf_size < len) {
@@ -336,8 +334,10 @@ shmem_sleep_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
 	struct ltproto_socket_shmem_sleep *ssk = (struct ltproto_socket_shmem_sleep *)sk;
 
-	ssk->tx_ring->ref --;
-	ssk->rx_ring->ref --;
+	if (ssk->rx_ring != NULL && ssk->tx_ring != NULL) {
+		ssk->tx_ring->ref --;
+		ssk->rx_ring->ref --;
+	}
 
 	lt_objcache_free (ctx->sk_cache, ssk);
 

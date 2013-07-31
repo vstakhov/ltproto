@@ -246,12 +246,12 @@ wait_for_memory_passive (volatile int *ptr, int desired_value)
  * @return value got or -1 in case of error
  */
 int
-wait_for_memory_sleep (volatile int *ptr, int desired_value)
+wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec)
 {
 	int val, cycles = 0;
 	struct timespec ts = {
 		.tv_sec = 0,
-		.tv_nsec = 1000
+		.tv_nsec = nsec
 	};
 
 	for (;;) {
