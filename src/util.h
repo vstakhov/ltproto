@@ -99,12 +99,20 @@ int get_random_int (void *data);
 int wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value);
 
 /**
- * Wait for memory at pointer to get desired value, not changing state
+ * Wait for memory at pointer to get desired value, not changing state using futex or monitor
  * @param ptr pointer to wait
  * @param desired_value value to wait
  * @return value got or -1 in case of error
  */
 int wait_for_memory_passive (volatile int *ptr, int desired_value);
+
+/**
+* Wait for memory at pointer to get desired value, not changing state using sleep
+ * @param ptr pointer to wait
+ * @param desired_value value to wait
+ * @return value got or -1 in case of error
+ */
+int wait_for_memory_sleep (volatile int *ptr, int desired_value);
 
 /**
  * Atomically set new value to the pointer and wake up futexes (if any)
@@ -113,5 +121,6 @@ int wait_for_memory_passive (volatile int *ptr, int desired_value);
  * @return old value or -1 in case of errror
  */
 int signal_memory (volatile int *ptr, int newvalue);
+
 
 #endif /* UTIL_H_ */

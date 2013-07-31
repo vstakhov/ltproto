@@ -27,43 +27,43 @@
 #include <assert.h>
 
 /**
- * @file shmem.c
+ * @file shmem_sleep.c
  * @section DESCRIPTION
  *
  * This module implements the pure shared memory channel using futexes or sleep
  * for synchronization.
  * We use an ordinary TCP socket for accept and listen for a connection.
- * Connecting socket is responsible for allocating shmem ring.
+ * Connecting socket is responsible for allocating shmem_sleep ring.
  */
 
-int shmem_init_func (struct lt_module_ctx **ctx);
-struct ltproto_socket* shmem_socket_func (struct lt_module_ctx *ctx);
-int shmem_setopts_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue);
-int shmem_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
-int shmem_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog);
-struct ltproto_socket* shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen);
-int shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
-ssize_t shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
-ssize_t shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
-int shmem_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
-int shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
-int shmem_destroy_func (struct lt_module_ctx *ctx);
+int shmem_sleep_init_func (struct lt_module_ctx **ctx);
+struct ltproto_socket* shmem_sleep_socket_func (struct lt_module_ctx *ctx);
+int shmem_sleep_setopts_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue);
+int shmem_sleep_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
+int shmem_sleep_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog);
+struct ltproto_socket* shmem_sleep_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen);
+int shmem_sleep_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
+ssize_t shmem_sleep_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
+ssize_t shmem_sleep_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
+int shmem_sleep_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
+int shmem_sleep_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
+int shmem_sleep_destroy_func (struct lt_module_ctx *ctx);
 
-module_t shmem_module = {
-		.name = "shmem",
+module_t shmem_sleep_module = {
+		.name = "shmem_sleep",
 		.priority = 10,
-		.module_init_func = shmem_init_func,
-		.module_socket_func = shmem_socket_func,
-		.module_setopts_func = shmem_setopts_func,
-		.module_bind_func = shmem_bind_func,
-		.module_listen_func = shmem_listen_func,
-		.module_accept_func = shmem_accept_func,
-		.module_connect_func = shmem_connect_func,
-		.module_read_func = shmem_read_func,
-		.module_write_func = shmem_write_func,
-		.module_select_func = shmem_select_func,
-		.module_close_func = shmem_close_func,
-		.module_destroy_func = shmem_destroy_func
+		.module_init_func = shmem_sleep_init_func,
+		.module_socket_func = shmem_sleep_socket_func,
+		.module_setopts_func = shmem_sleep_setopts_func,
+		.module_bind_func = shmem_sleep_bind_func,
+		.module_listen_func = shmem_sleep_listen_func,
+		.module_accept_func = shmem_sleep_accept_func,
+		.module_connect_func = shmem_sleep_connect_func,
+		.module_read_func = shmem_sleep_read_func,
+		.module_write_func = shmem_sleep_write_func,
+		.module_select_func = shmem_sleep_select_func,
+		.module_close_func = shmem_sleep_close_func,
+		.module_destroy_func = shmem_sleep_destroy_func
 };
 
 #define LT_DEFAULT_SLOTS 128
@@ -96,7 +96,7 @@ struct lt_net_ring {
         (sizeof (struct lt_net_ring) + sizeof (struct lt_net_ring_slot) * (slots) +  \
         (bufsize) * (slots))
 
-struct ltproto_socket_shmem {
+struct ltproto_socket_shmem_sleep {
 	int fd;							// Socket descriptor
 	int tcp_fd;						// TCP link socket
 	struct ltproto_module *mod;		// Module handling this socket
@@ -111,7 +111,7 @@ struct ltproto_socket_shmem {
 };
 
 static void
-shmem_init_ring (struct lt_net_ring *ring, int nslots, int bufsize)
+shmem_sleep_init_ring (struct lt_net_ring *ring, int nslots, int bufsize)
 {
 	memset (ring, 0, LT_RING_SIZE (nslots, bufsize));
 	ring->buf_size = bufsize;
@@ -122,19 +122,19 @@ shmem_init_ring (struct lt_net_ring *ring, int nslots, int bufsize)
 }
 
 int
-shmem_init_func (struct lt_module_ctx **ctx)
+shmem_sleep_init_func (struct lt_module_ctx **ctx)
 {
 	*ctx = calloc (1, sizeof (struct lt_module_ctx));
 	(*ctx)->len = sizeof (struct lt_module_ctx);
-	(*ctx)->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_shmem));
+	(*ctx)->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_shmem_sleep));
 
 	return 0;
 }
 
 struct ltproto_socket *
-shmem_socket_func (struct lt_module_ctx *ctx)
+shmem_sleep_socket_func (struct lt_module_ctx *ctx)
 {
-	struct ltproto_socket_shmem *sk;
+	struct ltproto_socket_shmem_sleep *sk;
 
 	sk = lt_objcache_alloc (ctx->sk_cache);
 	assert (sk != NULL);
@@ -144,27 +144,28 @@ shmem_socket_func (struct lt_module_ctx *ctx)
 }
 
 int
-shmem_setopts_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue)
+shmem_sleep_setopts_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue)
 {
 	return setsockopt (sk->tcp_fd, SOL_SOCKET, optname, &optvalue, sizeof (optvalue));
 }
 
 int
-shmem_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
+shmem_sleep_bind_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
 	return 0;
 }
 
 int
-shmem_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog)
+shmem_sleep_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int backlog)
 {
 	return 0;
 }
 
 struct ltproto_socket *
-shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen)
+shmem_sleep_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
+		struct sockaddr *addr, socklen_t *addrlen)
 {
-	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk, *nsk;
+	struct ltproto_socket_shmem_sleep *ssk = (struct ltproto_socket_shmem_sleep *)sk, *nsk;
 
 	nsk = lt_objcache_alloc (ctx->sk_cache);
 	assert (nsk != NULL);
@@ -184,6 +185,7 @@ shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct 
 		lt_objcache_free (ctx->sk_cache, nsk);
 		return NULL;
 	}
+
 	nsk->rx_ring->ref ++;
 	nsk->tx_ring->ref ++;
 
@@ -191,9 +193,10 @@ shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct 
 }
 
 int
-shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
+shmem_sleep_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
+		const struct sockaddr *addr, socklen_t addrlen)
 {
-	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk;
+	struct ltproto_socket_shmem_sleep *ssk = (struct ltproto_socket_shmem_sleep *)sk;
 
 	/* Inverse the order of tags */
 	ssk->rx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
@@ -205,8 +208,8 @@ shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const 
 		return -1;
 	}
 
-	shmem_init_ring (ssk->rx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
-	shmem_init_ring (ssk->tx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
+	shmem_sleep_init_ring (ssk->rx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
+	shmem_sleep_init_ring (ssk->tx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
 
 	/* Send tag */
 	if (write (ssk->tcp_fd, &ssk->tag, sizeof (ssk->tag[0]) * 2) == -1) {
@@ -214,16 +217,15 @@ shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const 
 				&ssk->tag, sizeof (ssk->tag));
 		return -1;
 	}
-
 	ssk->ring_owner = 1;
 
 	return 0;
 }
 
 ssize_t
-shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t orig_len)
+shmem_sleep_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t orig_len)
 {
-	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk;
+	struct ltproto_socket_shmem_sleep *ssk = (struct ltproto_socket_shmem_sleep *)sk;
 	struct lt_net_ring_slot *slot;
 	unsigned char *cur;
 	unsigned int len = orig_len;
@@ -239,12 +241,12 @@ shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf
 		if (ssk->rx_ring->ref == 1) {
 			if (ssk->ring_owner) {
 				ctx->lib_ctx->allocator->allocator_free_func (ctx->lib_ctx->alloc_ctx,
-					ssk->rx_ring, LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF));
+						ssk->rx_ring, LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF));
 			}
 			return 0;
 		}
 		slot = &ssk->rx_ring->slot[ssk->cur_rx];
-		if (wait_for_memory_passive (&slot->flags, LT_SLOT_FLAG_READY) == -1) {
+		if (wait_for_memory_sleep (&slot->flags, LT_SLOT_FLAG_READY) == -1) {
 			return -1;
 		}
 		if (slot->len < len) {
@@ -252,14 +254,14 @@ shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf
 			cur += slot->len;
 			len -= slot->len;
 			ssk->cur_rx = LT_RING_NEXT (ssk->rx_ring, ssk->cur_rx);
-			signal_memory (&slot->flags, 0);
+			lt_ptr_atomic_set (&slot->flags, 0);
 		}
 		else {
 			memcpy (cur, LT_RING_BUF (ssk->rx_ring, ssk->cur_rx), len);
 			if (len == slot->len) {
 				/* Aligned case */
 				ssk->cur_rx = LT_RING_NEXT (ssk->rx_ring, ssk->cur_rx);
-				signal_memory (&slot->flags, 0);
+				lt_ptr_atomic_set (&slot->flags, 0);
 			}
 			else {
 				memcpy (LT_RING_BUF (ssk->rx_ring, ssk->cur_rx),
@@ -275,9 +277,9 @@ shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf
 }
 
 ssize_t
-shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t orig_len)
+shmem_sleep_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t orig_len)
 {
-	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk;
+	struct ltproto_socket_shmem_sleep *ssk = (struct ltproto_socket_shmem_sleep *)sk;
 	struct lt_net_ring_slot *slot;
 	const unsigned char *cur;
 	unsigned int len = orig_len;
@@ -291,7 +293,7 @@ shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const vo
 
 	for (;;) {
 		slot = &ssk->tx_ring->slot[ssk->cur_tx];
-		if (wait_for_memory_passive (&slot->flags, 0) == -1) {
+		if (wait_for_memory_sleep (&slot->flags, 0) == -1) {
 			return -1;
 		}
 		if (ssk->tx_ring->buf_size < len) {
@@ -300,13 +302,13 @@ shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const vo
 			len -= slot->len;
 			ssk->cur_tx = LT_RING_NEXT (ssk->tx_ring, ssk->cur_tx);
 			slot->len = ssk->tx_ring->buf_size;
-			signal_memory (&slot->flags, LT_SLOT_FLAG_READY);
+			lt_ptr_atomic_set (&slot->flags, LT_SLOT_FLAG_READY);
 		}
 		else {
 			memcpy (LT_RING_BUF (ssk->tx_ring, ssk->cur_tx), cur, len);
 			ssk->cur_tx = LT_RING_NEXT (ssk->tx_ring, ssk->cur_tx);
 			slot->len = len;
-			signal_memory (&slot->flags, LT_SLOT_FLAG_READY);
+			lt_ptr_atomic_set (&slot->flags, LT_SLOT_FLAG_READY);
 			return orig_len;
 		}
 	}
@@ -314,7 +316,7 @@ shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const vo
 }
 
 int
-shmem_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv)
+shmem_sleep_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv)
 {
 	struct pollfd pfd;
 	int msec = -1;
@@ -330,9 +332,9 @@ shmem_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short w
 }
 
 int
-shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
+shmem_sleep_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
-	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk;
+	struct ltproto_socket_shmem_sleep *ssk = (struct ltproto_socket_shmem_sleep *)sk;
 
 	ssk->tx_ring->ref --;
 	ssk->rx_ring->ref --;
@@ -343,7 +345,7 @@ shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 }
 
 int
-shmem_destroy_func (struct lt_module_ctx *ctx)
+shmem_sleep_destroy_func (struct lt_module_ctx *ctx)
 {
 	lt_objcache_destroy (ctx->sk_cache);
 	free (ctx);

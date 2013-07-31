@@ -176,7 +176,8 @@ wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value)
 			}
 		}
 #else
-# error "No spinning logic defined"
+		errno = ENOSYS;
+		return -1;
 #endif
 	}
 
@@ -230,8 +231,42 @@ wait_for_memory_passive (volatile int *ptr, int desired_value)
 					: "a" (0), "c" (0));
 		}
 #else
-# error "No spinning logic defined"
+		errno = ENOSYS;
+		return -1;
 #endif
+	}
+
+	return 0;
+}
+
+/**
+* Wait for memory at pointer to get desired value, not changing state using sleep
+ * @param ptr pointer to wait
+ * @param desired_value value to wait
+ * @return value got or -1 in case of error
+ */
+int
+wait_for_memory_sleep (volatile int *ptr, int desired_value)
+{
+	int val, cycles = 0;
+	struct timespec ts = {
+		.tv_sec = 0,
+		.tv_nsec = 1000
+	};
+
+	for (;;) {
+		val = lt_int_atomic_get (ptr);
+
+		if (val == desired_value) {
+			break;
+		}
+		/* Need to spin */
+		(void)nanosleep (&ts, NULL);
+		cycles ++;
+		if (cycles > 100) {
+			errno = ETIMEDOUT;
+			return -1;
+		}
 	}
 
 	return 0;

@@ -349,6 +349,11 @@ static struct {
 				"shmem",
 				"Shared memory channel, synced by mutexes",
 				1
+		},
+		{
+				"shmem_sleep",
+				"Shared memory channel, synced by sleep",
+				1
 		}
 };
 
