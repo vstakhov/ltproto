@@ -46,16 +46,22 @@ set logscale x
 plot	"$TEST_FILE" using 1:(rate(\$2)) title 'TCP' w linespoints, \
 	"$TEST_FILE" using 1:(rate(\$3)) title 'Unix sockets' w linespoints, \
 	"$TEST_FILE" using 1:(rate(\$4)) title 'UDP-shmem' w linespoints, \
-	"$TEST_FILE" using 1:(rate(\$5)) title 'Unix-shmem' w linespoints
+	"$TEST_FILE" using 1:(rate(\$5)) title 'Unix-shmem' w linespoints, \
+	"$TEST_FILE" using 1:(rate(\$6)) title 'Shmem-futex' w linespoints, \
+	"$TEST_FILE" using 1:(rate(\$7)) title 'Shmem-sleep' w linespoints
 set title "LTproto test binded to a same CPU core"
 plot	"$TEST_FILE.binded" using 1:(rate(\$2)) title 'TCP' w linespoints, \
 	"$TEST_FILE.binded" using 1:(rate(\$3)) title 'Unix sockets' w linespoints, \
 	"$TEST_FILE.binded" using 1:(rate(\$4)) title 'UDP-shmem' w linespoints, \
-	"$TEST_FILE.binded" using 1:(rate(\$5)) title 'Unix-shmem' w linespoints
+	"$TEST_FILE.binded" using 1:(rate(\$5)) title 'Unix-shmem' w linespoints, \
+	"$TEST_FILE.binded" using 1:(rate(\$6)) title 'Shmem-futex' w linespoints, \
+	"$TEST_FILE.binded" using 1:(rate(\$7)) title 'Shmem-sleep' w linespoints
 set title "LTproto test binded to different CPU cores"
 plot	"$TEST_FILE.dbinded" using 1:(rate(\$2)) title 'TCP' w linespoints, \
 	"$TEST_FILE.dbinded" using 1:(rate(\$3)) title 'Unix sockets' w linespoints, \
 	"$TEST_FILE.dbinded" using 1:(rate(\$4)) title 'UDP-shmem' w linespoints, \
-	"$TEST_FILE.dbinded" using 1:(rate(\$5)) title 'Unix-shmem' w linespoints
+	"$TEST_FILE.dbinded" using 1:(rate(\$5)) title 'Unix-shmem' w linespoints, \
+	"$TEST_FILE.dbinded" using 1:(rate(\$6)) title 'Shmem-futex' w linespoints, \
+	"$TEST_FILE.dbinded" using 1:(rate(\$7)) title 'Shmem-sleep' w linespoints
 EOF
 
