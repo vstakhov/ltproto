@@ -138,19 +138,19 @@ get_random_int (void *data)
 
 
 int
-wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value)
+wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value, int forbidden_value)
 {
 	int val;
 
 	for (;;) {
 		val = lt_int_atomic_get (ptr);
 
-		if (val == desired_value || val == wait_value) {
+		if (val == desired_value || val == forbidden_value) {
 			break;
 		}
 		/* Need to spin */
 #ifdef HAVE_FUTEX
-		if (lt_int_atomic_cmpxchg (ptr, val, wait_value) != val) {
+		if (lt_int_atomic_cmpxchg (ptr, val, wait_value) == val) {
 			if (syscall (SYS_futex, ptr, FUTEX_WAIT, wait_value, NULL, NULL, 0) == -1) {
 				if (errno == EWOULDBLOCK) {
 					continue;
@@ -159,7 +159,7 @@ wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value)
 			}
 		}
 #elif defined(HAVE_UMTX_OP)
-		if (lt_int_atomic_cmpxchg (ptr, val, wait_value) != val) {
+		if (lt_int_atomic_cmpxchg (ptr, val, wait_value) == val) {
 			if (_umtx_op ((void *)ptr, UMTX_OP_WAIT_UINT, wait_value, 0, NULL) == -1) {
 				if (errno == EWOULDBLOCK) {
 					continue;

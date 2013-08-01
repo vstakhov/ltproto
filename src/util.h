@@ -126,7 +126,7 @@ int get_random_int (void *data);
  * @param wait_value set this value while waiting
  * @return value got or -1 in case of error
  */
-int wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value);
+int wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value, int forbidden_value);
 
 /**
  * Wait for memory at pointer to get desired value, not changing state using futex or monitor

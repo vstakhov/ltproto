@@ -171,7 +171,11 @@ shmem_sleep_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
 	assert (nsk != NULL);
 
 	/* Read tag to allocate */
-	if (read (ssk->tcp_fd, &nsk->tag, sizeof (ssk->tag[0]) * 2) == -1) {
+	if (read (ssk->tcp_fd, &nsk->tag[0], sizeof (ssk->tag[0])) == -1) {
+		lt_objcache_free (ctx->sk_cache, nsk);
+		return NULL;
+	}
+	if (read (ssk->tcp_fd, &nsk->tag[1], sizeof (ssk->tag[0])) == -1) {
 		lt_objcache_free (ctx->sk_cache, nsk);
 		return NULL;
 	}
@@ -200,9 +204,9 @@ shmem_sleep_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
 
 	/* Inverse the order of tags */
 	ssk->rx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
-			LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[1]);
+			LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[0]);
 	ssk->tx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
-				LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[0]);
+				LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[1]);
 
 	if (ssk->rx_ring == NULL || ssk->tx_ring == NULL) {
 		return -1;
@@ -211,10 +215,11 @@ shmem_sleep_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
 	shmem_sleep_init_ring (ssk->rx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
 	shmem_sleep_init_ring (ssk->tx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
 
-	/* Send tag */
-	if (write (ssk->tcp_fd, &ssk->tag, sizeof (ssk->tag[0]) * 2) == -1) {
-		ctx->lib_ctx->allocator->allocator_free_func (ctx->lib_ctx->alloc_ctx,
-				&ssk->tag, sizeof (ssk->tag));
+	/* Inverse the order of tags */
+	if (write (ssk->tcp_fd, &ssk->tag[1], sizeof (ssk->tag[0])) == -1) {
+		return -1;
+	}
+	if (write (ssk->tcp_fd, &ssk->tag[0], sizeof (ssk->tag[0])) == -1) {
 		return -1;
 	}
 	ssk->ring_owner = 1;

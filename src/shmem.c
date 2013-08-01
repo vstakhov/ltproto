@@ -119,8 +119,6 @@ struct ltproto_socket_shmem {
 	unsigned int cur_rx;			// Current RX slot
 	unsigned int cur_tx;			// Current TX slot
 	struct lt_alloc_tag tag[2];		// Connected tags
-	struct lt_socket_control *ctl;	// Control structure
-	struct lt_alloc_tag ctl_tag;	// Control tag
 	int ring_owner;					// The owner of rings
 	struct {
 		struct lt_net_ring_slot *slot;
@@ -206,7 +204,11 @@ shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct 
 	assert (nsk != NULL);
 
 	/* Read tag to allocate */
-	if (read (ssk->tcp_fd, &nsk->tag, sizeof (ssk->tag[0]) * 2) == -1) {
+	if (read (ssk->tcp_fd, &nsk->tag[0], sizeof (ssk->tag[0])) == -1) {
+		lt_objcache_free (ctx->sk_cache, nsk);
+		return NULL;
+	}
+	if (read (ssk->tcp_fd, &nsk->tag[1], sizeof (ssk->tag[0])) == -1) {
 		lt_objcache_free (ctx->sk_cache, nsk);
 		return NULL;
 	}
@@ -223,14 +225,6 @@ shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct 
 	nsk->rx_ring->ref ++;
 	nsk->tx_ring->ref ++;
 
-	/* Attach control ring */
-	if (read (ssk->tcp_fd, &nsk->ctl_tag, sizeof (ssk->ctl_tag)) == -1) {
-			lt_objcache_free (ctx->sk_cache, nsk);
-			return NULL;
-	}
-	nsk->ctl = ctx->lib_ctx->allocator->allocator_attachtag_func (ctx->lib_ctx->alloc_ctx,
-			&nsk->ctl_tag);
-
 	return (struct ltproto_socket *)nsk;
 }
 
@@ -239,26 +233,22 @@ shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const 
 {
 	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk;
 
-	/* Inverse the order of tags */
 	ssk->rx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
-			LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[1]);
+			LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[0]);
 	ssk->tx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
-				LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[0]);
-	ssk->ctl = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
-			sizeof (*ssk->ctl), &ssk->ctl_tag);
-	if (ssk->rx_ring == NULL || ssk->tx_ring == NULL || ssk->ctl == NULL) {
+				LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[1]);
+	if (ssk->rx_ring == NULL || ssk->tx_ring == NULL) {
 		return -1;
 	}
 
 	shmem_init_ring (ssk->rx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
 	shmem_init_ring (ssk->tx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
-	memset (ssk->ctl, 0, sizeof (*ssk->ctl));
 
-	/* Send tag */
-	if (write (ssk->tcp_fd, &ssk->tag, sizeof (ssk->tag[0]) * 2) == -1) {
+	/* Inverse the order of tags */
+	if (write (ssk->tcp_fd, &ssk->tag[1], sizeof (ssk->tag[0])) == -1) {
 		return -1;
 	}
-	if (write (ssk->tcp_fd, &ssk->ctl_tag, sizeof (ssk->ctl_tag)) == -1) {
+	if (write (ssk->tcp_fd, &ssk->tag[0], sizeof (ssk->tag[0])) == -1) {
 		return -1;
 	}
 
@@ -289,7 +279,11 @@ shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf
 			signal_memory (&ssk->deferred_slot.slot->flags, LT_SLOT_FLAG_WAIT, ssk->deferred_slot.saved_flags);
 			ssk->deferred_slot.slot = NULL;
 		}
-		if (wait_for_memory_state (&slot->flags, LT_SLOT_FLAG_READY, LT_SLOT_FLAG_WAIT) == -1) {
+		if (ssk->rx_ring->ref == 1) {
+			return 0;
+		}
+		if (wait_for_memory_state (&slot->flags, LT_SLOT_FLAG_READY,
+				LT_SLOT_FLAG_WAIT_READ, LT_SLOT_FLAG_WAIT_WRITE) == -1) {
 			return -1;
 		}
 		if (slot->flags & LT_SLOT_FLAG_CLOSED) {
@@ -300,18 +294,18 @@ shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf
 			cur += slot->len;
 			len -= slot->len;
 			ssk->cur_rx = LT_RING_NEXT (ssk->rx_ring, ssk->cur_rx);
-			slot->flags = LT_SLOT_FLAG_FREE;
-			shmem_queue_slot (slot, ssk);
-			//signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_FREE);
+			//slot->flags = LT_SLOT_FLAG_FREE;
+			//shmem_queue_slot (slot, ssk);
+			signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_FREE);
 		}
 		else {
 			memcpy (cur, LT_RING_BUF (ssk->rx_ring, ssk->cur_rx), len);
 			if (len == slot->len) {
 				/* Aligned case */
 				ssk->cur_rx = LT_RING_NEXT (ssk->rx_ring, ssk->cur_rx);
-				slot->flags = LT_SLOT_FLAG_FREE;
-				shmem_queue_slot (slot, ssk);
-				//signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_FREE);
+				//slot->flags = LT_SLOT_FLAG_FREE;
+				//shmem_queue_slot (slot, ssk);
+				signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_FREE);
 			}
 			else {
 				memcpy (LT_RING_BUF (ssk->rx_ring, ssk->cur_rx),
@@ -348,7 +342,8 @@ shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const vo
 			signal_memory (&ssk->deferred_slot.slot->flags, LT_SLOT_FLAG_WAIT, ssk->deferred_slot.saved_flags);
 			ssk->deferred_slot.slot = NULL;
 		}
-		if (wait_for_memory_state (&slot->flags, LT_SLOT_FLAG_FREE, LT_SLOT_FLAG_WAIT) == -1) {
+		if (wait_for_memory_state (&slot->flags, LT_SLOT_FLAG_FREE,
+				LT_SLOT_FLAG_WAIT_WRITE, LT_SLOT_FLAG_WAIT_READ) == -1) {
 			return -1;
 		}
 		if (slot->flags & LT_SLOT_FLAG_CLOSED) {
@@ -360,17 +355,17 @@ shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const vo
 			len -= slot->len;
 			ssk->cur_tx = LT_RING_NEXT (ssk->tx_ring, ssk->cur_tx);
 			slot->len = ssk->tx_ring->buf_size;
-			slot->flags = LT_SLOT_FLAG_READY;
-			shmem_queue_slot (slot, ssk);
-			//signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_READY);
+			//slot->flags = LT_SLOT_FLAG_READY;
+			//shmem_queue_slot (slot, ssk);
+			signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_READY);
 		}
 		else {
 			memcpy (LT_RING_BUF (ssk->tx_ring, ssk->cur_tx), cur, len);
 			ssk->cur_tx = LT_RING_NEXT (ssk->tx_ring, ssk->cur_tx);
 			slot->len = len;
-			slot->flags = LT_SLOT_FLAG_READY;
-			shmem_queue_slot (slot, ssk);
-			//signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_READY);
+			//slot->flags = LT_SLOT_FLAG_READY;
+			//shmem_queue_slot (slot, ssk);
+			signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_READY);
 			return orig_len;
 		}
 	}
