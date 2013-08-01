@@ -96,7 +96,7 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	printf ("Send buffer: 4Mb, Recv buffer: 4Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
 #endif
 	fflush (stdout);
-	kill (spid, SIGTERM);
+	kill (spid, SIGKILL);
 }
 
 typedef void (*alloc_test_func)(void **chunks, int chunks_count, int chunk_length);

@@ -282,6 +282,9 @@ shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf
 		if (ssk->rx_ring->ref == 1) {
 			return 0;
 		}
+		if (slot->flags & LT_SLOT_FLAG_CLOSED) {
+			return 0;
+		}
 		if (wait_for_memory_state (&slot->flags, LT_SLOT_FLAG_READY,
 				LT_SLOT_FLAG_WAIT_READ, LT_SLOT_FLAG_WAIT_WRITE) == -1) {
 			return -1;
@@ -342,6 +345,9 @@ shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const vo
 			signal_memory (&ssk->deferred_slot.slot->flags, LT_SLOT_FLAG_WAIT, ssk->deferred_slot.saved_flags);
 			ssk->deferred_slot.slot = NULL;
 		}
+		if (slot->flags & LT_SLOT_FLAG_CLOSED) {
+			return 0;
+		}
 		if (wait_for_memory_state (&slot->flags, LT_SLOT_FLAG_FREE,
 				LT_SLOT_FLAG_WAIT_WRITE, LT_SLOT_FLAG_WAIT_READ) == -1) {
 			return -1;
@@ -396,15 +402,16 @@ shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 	unsigned int i;
 
 	//fprintf (stderr, "closing\n");
-	for (i = 0; i < ssk->rx_ring->num_slots; i ++) {
-		slot = &ssk->rx_ring->slot[i];
-		signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_CLOSED);
-	}
-	for (i = 0; i < ssk->tx_ring->num_slots; i ++) {
-		slot = &ssk->tx_ring->slot[i];
-		signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_CLOSED);
-	}
 	if (ssk->rx_ring != NULL && ssk->tx_ring != NULL) {
+		for (i = 0; i < ssk->rx_ring->num_slots; i ++) {
+			slot = &ssk->rx_ring->slot[i];
+			signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_CLOSED);
+		}
+		for (i = 0; i < ssk->tx_ring->num_slots; i ++) {
+			slot = &ssk->tx_ring->slot[i];
+			signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_CLOSED);
+		}
+
 		ssk->tx_ring->ref --;
 		ssk->rx_ring->ref --;
 	}
