@@ -24,6 +24,7 @@
 #include "config.h"
 #include "ltproto_internal.h"
 #include "util.h"
+#include <assert.h>
 #ifdef HAVE_OPENSSL
 #include <openssl/rand.h>
 #endif
@@ -144,25 +145,31 @@ wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value)
 	for (;;) {
 		val = lt_int_atomic_get (ptr);
 
-		if (val == desired_value) {
+		if (val == desired_value || val == wait_value) {
 			break;
 		}
 		/* Need to spin */
 #ifdef HAVE_FUTEX
-		if (val == wait_value || __sync_bool_compare_and_swap (ptr, val, wait_value)) {
+		if (lt_int_atomic_cmpxchg (ptr, val, wait_value) != val) {
 			if (syscall (SYS_futex, ptr, FUTEX_WAIT, wait_value, NULL, NULL, 0) == -1) {
+				if (errno == EWOULDBLOCK) {
+					continue;
+				}
 				return -1;
 			}
 		}
 #elif defined(HAVE_UMTX_OP)
-		if (val == wait_value || __sync_bool_compare_and_swap (ptr, val, wait_value)) {
+		if (val == wait_value || lt_int_atomic_cmpxchg (ptr, val, wait_value)) {
 			if (_umtx_op ((void *)ptr, UMTX_OP_WAIT_UINT, wait_value, 0, NULL) == -1) {
+				if (errno == EWOULDBLOCK) {
+					continue;
+				}
 				return -1;
 			}
 		}
 #elif defined(HAVE_HAVE_MONITOR_MWAIT)
 		for (;;) {
-			if (val == wait_value || __sync_bool_compare_and_swap (ptr, val, wait_value)) {
+			if (val == wait_value || lt_int_atomic_cmpxchg (ptr, val, wait_value)) {
 				__asm __volatile("monitor"
 						:  "=m" (*(char *)&ptr)
 						: "a" (ptr), "c" (0), "d" (0));
@@ -192,24 +199,33 @@ wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value)
  * @return value got or -1 in case of error
  */
 int
-wait_for_memory_passive (volatile int *ptr, int desired_value)
+wait_for_memory_passive (volatile int *ptr, int desired_value, volatile int *ptr2, int val2, const char *msg)
 {
-	int val;
+	int val, oldval2;
+	struct timespec ts = {
+		.tv_sec = 0,
+		.tv_nsec = 1000
+	};
 
 	for (;;) {
 		val = lt_int_atomic_get (ptr);
+		oldval2 = lt_int_atomic_get (ptr2);
 
 		if (val == desired_value) {
 			break;
 		}
 		/* Need to spin */
+		lt_int_atomic_cmpxchg (ptr2, oldval2, val2);
 #ifdef HAVE_FUTEX
+		fprintf (stderr, "wait for %s\n", msg);
 		if (syscall (SYS_futex, ptr, FUTEX_WAIT, val, NULL, NULL, 0) == -1) {
+			lt_int_atomic_cmpxchg (ptr2, val2, oldval2);
 			if (errno == EWOULDBLOCK) {
 				continue;
 			}
 			return -1;
 		}
+		lt_int_atomic_cmpxchg (ptr2, val2, oldval2);
 #elif defined(HAVE_UMTX_OP)
 		if (_umtx_op ((void *)ptr, UMTX_OP_WAIT_UINT, val, 0, NULL) == -1) {
 			if (errno == EWOULDBLOCK) {
@@ -273,16 +289,22 @@ wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec)
 }
 
 int
-signal_memory (volatile int *ptr, int newvalue)
+signal_memory (volatile int *ptr, int signalvalue, int newvalue)
 {
-	lt_ptr_atomic_set (ptr, newvalue);
+	int oldval;
+
+	oldval = lt_int_atomic_xchg (ptr, newvalue);
 #ifdef HAVE_FUTEX
-	if (syscall (SYS_futex, ptr, FUTEX_WAKE, 1, NULL, NULL, 0) == -1) {
-		return -1;
+	if (oldval & signalvalue) {
+		if (syscall (SYS_futex, ptr, FUTEX_WAKE, 1, NULL, NULL, 0) == -1) {
+			return -1;
+		}
 	}
 #elif defined(HAVE_UMTX_OP)
-	if (_umtx_op ((void *)ptr, UMTX_OP_WAKE, 1, 0, 0) == -1) {
-		return -1;
+	if (oldval & signalvalue) {
+		if (_umtx_op ((void *)ptr, UMTX_OP_WAKE, 1, 0, 0) == -1) {
+			return -1;
+		}
 	}
 #endif
 	return 0;

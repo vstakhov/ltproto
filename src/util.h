@@ -61,6 +61,36 @@
   }))
 #endif
 
+static inline unsigned
+lt_int_atomic_cmpxchg (volatile unsigned *loc, unsigned old, unsigned new)
+{
+	unsigned res;
+
+	__asm __volatile (
+			"lock cmpxchg %3, %1;"
+			: "=a" (res), "=m" (*loc)
+			: "0" (old),
+			"r" (new),
+			"m" (*loc)
+			: "memory");
+	return res;
+}
+
+static inline unsigned
+lt_int_atomic_xchg (volatile unsigned *loc, unsigned new)
+{
+	unsigned res;
+
+	__asm __volatile ("xchg %0, %1;"
+			: "=r" (res),
+			"=m" (*loc)
+			: "m" (*loc),
+			"0" (new)
+			: "memory");
+	return res;
+}
+
+
 /**
  * Initialise pseudo random generator
  * @return opaque data pointer that must be freed by caller
@@ -104,7 +134,7 @@ int wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value)
  * @param desired_value value to wait
  * @return value got or -1 in case of error
  */
-int wait_for_memory_passive (volatile int *ptr, int desired_value);
+int wait_for_memory_passive (volatile int *ptr, int desired_value, volatile int *ptr2, int val2, const char *msg);
 
 /**
 * Wait for memory at pointer to get desired value, not changing state using sleep
@@ -117,10 +147,11 @@ int wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec);
 /**
  * Atomically set new value to the pointer and wake up futexes (if any)
  * @param ptr pointer to set
+ * @param signalvalue value to emit signal
  * @param newvalue new value
  * @return old value or -1 in case of errror
  */
-int signal_memory (volatile int *ptr, int newvalue);
+int signal_memory (volatile int *ptr, int signalvalue, int newvalue);
 
 
 #endif /* UTIL_H_ */
