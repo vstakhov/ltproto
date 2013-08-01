@@ -159,7 +159,7 @@ wait_for_memory_state (volatile int *ptr, int desired_value, int wait_value)
 			}
 		}
 #elif defined(HAVE_UMTX_OP)
-		if (val == wait_value || lt_int_atomic_cmpxchg (ptr, val, wait_value)) {
+		if (lt_int_atomic_cmpxchg (ptr, val, wait_value) != val) {
 			if (_umtx_op ((void *)ptr, UMTX_OP_WAIT_UINT, wait_value, 0, NULL) == -1) {
 				if (errno == EWOULDBLOCK) {
 					continue;
