@@ -69,13 +69,6 @@ module_t shmem_module = {
 #define LT_DEFAULT_SLOTS 256
 #define LT_DEFAULT_BUF 4096
 
-struct lt_socket_control {
-	unsigned int wait_read;
-	unsigned int wait_write;
-	unsigned int write_closed;
-	unsigned int read_closed;
-};
-
 struct lt_net_ring_slot {
 	unsigned int len;
 	unsigned int flags;
@@ -120,11 +113,6 @@ struct ltproto_socket_shmem {
 	unsigned int cur_tx;			// Current TX slot
 	struct lt_alloc_tag tag[2];		// Connected tags
 	int ring_owner;					// The owner of rings
-	struct {
-		struct lt_net_ring_slot *slot;
-		int saved_flags;
-		int count;
-	} deferred_slot;				// Write operation deferred (to avoid deadlock)
 };
 
 static void
@@ -136,23 +124,6 @@ shmem_init_ring (struct lt_net_ring *ring, int nslots, int bufsize)
 				nslots * sizeof (struct lt_net_ring_slot);
 	ring->num_slots = nslots;
 	ring->ref = 1;
-}
-
-static void
-shmem_queue_slot (struct lt_net_ring_slot *slot, struct ltproto_socket_shmem *ssk)
-{
-	if (ssk->deferred_slot.slot != NULL) {
-		if (--ssk->deferred_slot.count == 0) {
-			signal_memory (&ssk->deferred_slot.slot->flags, LT_SLOT_FLAG_WAIT,
-					ssk->deferred_slot.saved_flags);
-			ssk->deferred_slot.slot = NULL;
-		}
-	}
-	else {
-		ssk->deferred_slot.slot = slot;
-		ssk->deferred_slot.saved_flags = slot->flags;
-		ssk->deferred_slot.count = 2;
-	}
 }
 
 int
@@ -275,10 +246,6 @@ shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf
 	for (;;) {
 		slot = &ssk->rx_ring->slot[ssk->cur_rx];
 		//fprintf (stderr, "read ring: %d\n", ssk->cur_rx);
-		if (ssk->deferred_slot.slot != NULL) {
-			signal_memory (&ssk->deferred_slot.slot->flags, LT_SLOT_FLAG_WAIT, ssk->deferred_slot.saved_flags);
-			ssk->deferred_slot.slot = NULL;
-		}
 		if (ssk->rx_ring->ref == 1) {
 			return 0;
 		}
@@ -341,10 +308,6 @@ shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const vo
 	for (;;) {
 		slot = &ssk->tx_ring->slot[ssk->cur_tx];
 		//fprintf (stderr, "write ring: %d\n", ssk->cur_tx);
-		if (ssk->deferred_slot.slot != NULL) {
-			signal_memory (&ssk->deferred_slot.slot->flags, LT_SLOT_FLAG_WAIT, ssk->deferred_slot.saved_flags);
-			ssk->deferred_slot.slot = NULL;
-		}
 		if (slot->flags & LT_SLOT_FLAG_CLOSED) {
 			return 0;
 		}
