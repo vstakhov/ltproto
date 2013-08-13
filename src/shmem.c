@@ -320,10 +320,10 @@ shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const vo
 		}
 		if (ssk->tx_ring->buf_size < len) {
 			memcpy (LT_RING_BUF (ssk->tx_ring, ssk->cur_tx), cur, ssk->tx_ring->buf_size);
+			slot->len = ssk->tx_ring->buf_size;
 			cur += slot->len;
 			len -= slot->len;
 			ssk->cur_tx = LT_RING_NEXT (ssk->tx_ring, ssk->cur_tx);
-			slot->len = ssk->tx_ring->buf_size;
 			//slot->flags = LT_SLOT_FLAG_READY;
 			//shmem_queue_slot (slot, ssk);
 			signal_memory (&slot->flags, LT_SLOT_FLAG_WAIT, LT_SLOT_FLAG_READY);
