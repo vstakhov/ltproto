@@ -155,9 +155,12 @@ fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum)
 	struct ltproto_socket *sock, *conn = NULL;
 	struct sockaddr_in sin;
 	socklen_t slen = sizeof (struct sockaddr_in);
-	void *recv_buf;
+	uint8_t *recv_buf;
 	sigset_t sigmask;
 	struct sigaction sa;
+	uint64_t sum, *p, test;
+	int r, remain;
+	unsigned int i, chr;
 
 	pid = fork ();
 
@@ -204,7 +207,29 @@ do_client:
 			break;
 		}
 		conn = ltproto_accept (sock, (struct sockaddr *)&sin, &slen);
-		while (ltproto_read (conn, recv_buf, recv_buffer_size) > 0);
+		chr = 0;
+		for (;;) {
+			remain = recv_buffer_size;
+			r = 0;
+			do {
+				r = ltproto_read (conn, recv_buf + r, remain);
+				if (r > 0) {
+					remain -= r;
+				}
+			} while (remain > 0 && r > 0);
+			if (r <= 0) {
+				break;
+			}
+			sum = 0;
+			for (i = 0; i < recv_buffer_size; i += 16) {
+				p = (uint64_t *)&recv_buf[i];
+				sum += p[0] + p[1];
+			}
+			memset (&test, chr % 256, sizeof (test));
+			test *= (uint64_t)recv_buffer_size / 8;
+			assert (sum == test);
+			chr ++;
+		}
 
 		ltproto_close (conn);
 	} while (conn != NULL && !got_term);
@@ -230,7 +255,8 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, 
 	struct ltproto_socket *sock;
 	u_int i;
 	struct sockaddr_in sin;
-	void *send_buf;
+	uint8_t *send_buf;
+	int r, remain;
 
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons (port);
@@ -241,7 +267,6 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, 
 
 	assert (posix_memalign (&send_buf, 16, send_buffer_size) == 0);
 	assert (send_buf != NULL);
-	memset (send_buf, 0xde, send_buffer_size);
 
 	if (ltproto_connect (sock, (struct sockaddr *)&sin, sizeof (sin)) == -1) {
 		perror ("connect failed");
@@ -250,10 +275,16 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, 
 
 	gperf_profiler_init (modname);
 	for (i = 0; i < repeat_count; i ++) {
-		if (ltproto_write (sock, send_buf, send_buffer_size) == -1) {
-			perror ("write failed");
-			goto err;
-		}
+		memset (send_buf, i % 256, send_buffer_size);
+		r = 0;
+		remain = send_buffer_size;
+		do {
+			if ((r = ltproto_write (sock, send_buf + r, remain)) == -1) {
+				perror ("write failed");
+				goto err;
+			}
+			remain -= r;
+		} while (remain > 0);
 	}
 
 	gperf_profiler_stop ();
