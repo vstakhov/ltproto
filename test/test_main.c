@@ -336,6 +336,11 @@ static struct {
 				1
 		},
 		{
+				"pipe",
+				"Named pipes module",
+				1
+		},
+		{
 				"udp_shmem",
 				"UDP + shared memory module",
 				1
