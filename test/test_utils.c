@@ -27,6 +27,7 @@
 #include "test_utils.h"
 #include <assert.h>
 #include <math.h>
+#include <cpuid.h>
 
 sig_atomic_t got_term = 0;
 
@@ -120,10 +121,10 @@ round_test_time (uint64_t nanoseconds)
 
     res = (int64_t)log10 (1000000000LL / ts.tv_nsec);
     if (res < 0) {
-        res = 0;
+    	res = 0;
     }
     if (res > 6) {
-        res = 6;
+    	res = 6;
     }
 #else
     /* For gettimeofday */
@@ -142,6 +143,108 @@ server_term_handler (int signo)
 {
 	got_term = 1;
 }
+
+static uint32_t
+murmur32_hash (char *in, uint32_t len)
+{
+
+
+	const uint32_t 			 c1 = 0xcc9e2d51;
+	const uint32_t 			 c2 = 0x1b873593;
+
+	const int				 nblocks = len / 4;
+	const uint32_t 			*blocks = (const uint32_t *)(in);
+	const uint8_t 			*tail;
+	uint32_t 				 h = 0;
+	int 					 i;
+	uint32_t 				 k;
+
+	if (in == NULL || len == 0) {
+		return 0;
+	}
+
+	tail = (const uint8_t *)(in + (nblocks * 4));
+
+	for (i = 0; i < nblocks; i++) {
+		k = blocks[i];
+
+		k *= c1;
+		k = (k << 15) | (k >> (32 - 15));
+		k *= c2;
+
+		h ^= k;
+		h = (h << 13) | (h >> (32 - 13));
+		h = (h * 5) + 0xe6546b64;
+	}
+
+	k = 0;
+	switch (len & 3) {
+	case 3:
+		k ^= tail[2] << 16;
+	case 2:
+		k ^= tail[1] << 8;
+	case 1:
+		k ^= tail[0];
+		k *= c1;
+		k = (k << 13) | (k >> (32 - 15));
+		k *= c2;
+		h ^= k;
+	};
+
+	h ^= len;
+
+	h ^= h >> 16;
+	h *= 0x85ebca6b;
+	h ^= h >> 13;
+	h *= 0xc2b2ae35;
+	h ^= h >> 16;
+
+	return h;
+}
+
+static int
+has_sse_42 (void) {
+	unsigned int eax, ebx, ecx, edx;
+
+	eax = ebx = ecx = edx = 0;
+	__get_cpuid(1, &eax, &ebx, &ecx, &edx);
+
+	if (ecx & bit_SSE4_2) {
+		return 1;
+	}
+
+	return 0;
+}
+
+static uint32_t
+fastcrc (char *str, uint32_t len) {
+	uint32_t q = len / sizeof(uint32_t),
+			r = len % sizeof(uint32_t),
+			*p = (uint32_t*)str, crc;
+
+	crc  =0;
+	while (q --) {
+		__asm__ __volatile__(
+				".byte 0xf2, 0xf, 0x38, 0xf1, 0xf1;"
+				:"=S"(crc)
+				 :"0"(crc), "c"(*p)
+		);
+		p ++;
+	}
+
+	str = (char*)p;
+	while (r --) {
+		__asm__ __volatile__(
+				".byte 0xf2, 0xf, 0x38, 0xf0, 0xf1"
+				:"=S"(crc)
+				 :"0"(crc), "c"(*str)
+		);
+		str ++;
+	}
+
+	return crc;
+}
+
 /**
  * Fork server
  * @param port port to bind
@@ -149,7 +252,7 @@ server_term_handler (int signo)
  * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
  */
 pid_t
-fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum)
+fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum, int strict_check)
 {
 	pid_t pid;
 	struct ltproto_socket *sock, *conn = NULL;
@@ -158,9 +261,16 @@ fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum)
 	uint8_t *recv_buf;
 	sigset_t sigmask;
 	struct sigaction sa;
-	uint64_t sum, *p, test;
-	int r, remain;
-	unsigned int i, chr;
+	uint32_t hash, test;
+	int r, remain, done;
+	uint32_t (*hf)(char *in, uint32_t len);
+
+	if (has_sse_42 ()) {
+		hf = fastcrc;
+	}
+	else {
+		hf = murmur32_hash;
+	}
 
 	pid = fork ();
 
@@ -191,7 +301,7 @@ do_client:
 	sin.sin_port = htons (port);
 	sin.sin_addr.s_addr = INADDR_ANY;
 
-	assert (posix_memalign (&recv_buf, 16, recv_buffer_size) == 0);
+	assert (posix_memalign ((void **)&recv_buf, 16, recv_buffer_size) == 0);
 	assert (recv_buf != NULL);
 
 	assert (ltproto_bind (sock, (struct sockaddr *)&sin, slen) != -1);
@@ -207,28 +317,25 @@ do_client:
 			break;
 		}
 		conn = ltproto_accept (sock, (struct sockaddr *)&sin, &slen);
-		chr = 0;
 		for (;;) {
 			remain = recv_buffer_size;
 			r = 0;
+			done = 0;
 			do {
-				r = ltproto_read (conn, recv_buf + r, remain);
+				r = ltproto_read (conn, recv_buf + done, remain);
 				if (r > 0) {
 					remain -= r;
+					done += r;
 				}
 			} while (remain > 0 && r > 0);
 			if (r <= 0) {
 				break;
 			}
-			sum = 0;
-			for (i = 0; i < recv_buffer_size; i += 16) {
-				p = (uint64_t *)&recv_buf[i];
-				sum += p[0] + p[1];
+			if (strict_check) {
+				memcpy (&hash, recv_buf, sizeof (hash));
+				test = hf (recv_buf + sizeof (hash), recv_buffer_size - sizeof (hash));
+				assert (hash == test);
 			}
-			memset (&test, chr % 256, sizeof (test));
-			test *= (uint64_t)recv_buffer_size / 8;
-			assert (sum == test);
-			chr ++;
 		}
 
 		ltproto_close (conn);
@@ -250,13 +357,22 @@ do_client:
  * @return
  */
 int
-do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, const char *modname)
+do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, const char *modname, int strict_check)
 {
 	struct ltproto_socket *sock;
 	u_int i;
 	struct sockaddr_in sin;
 	uint8_t *send_buf;
-	int r, remain;
+	int r, remain, done;
+	uint32_t hash;
+	uint32_t (*hf)(char *in, uint32_t len);
+
+	if (has_sse_42 ()) {
+		hf = fastcrc;
+	}
+	else {
+		hf = murmur32_hash;
+	}
 
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons (port);
@@ -265,25 +381,32 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, 
 	assert (ltproto_socket (mod, &sock) != -1);
 	assert (sock != NULL);
 
-	assert (posix_memalign (&send_buf, 16, send_buffer_size) == 0);
+	assert (posix_memalign ((void **)&send_buf, 16, send_buffer_size) == 0);
 	assert (send_buf != NULL);
 
 	if (ltproto_connect (sock, (struct sockaddr *)&sin, sizeof (sin)) == -1) {
 		perror ("connect failed");
 		goto err;
 	}
+	memset (send_buf, 0x1, send_buffer_size);
 
 	gperf_profiler_init (modname);
 	for (i = 0; i < repeat_count; i ++) {
-		memset (send_buf, i % 256, send_buffer_size);
+		if (strict_check) {
+			memset (send_buf + sizeof (hash), i % 256, send_buffer_size - sizeof (hash));
+			hash = hf (send_buf + sizeof (hash), send_buffer_size - sizeof (hash));
+			memcpy (send_buf, &hash, sizeof (hash));
+		}
 		r = 0;
+		done = 0;
 		remain = send_buffer_size;
 		do {
-			if ((r = ltproto_write (sock, send_buf + r, remain)) == -1) {
+			if ((r = ltproto_write (sock, send_buf + done, remain)) == -1) {
 				perror ("write failed");
 				goto err;
 			}
 			remain -= r;
+			done += r;
 		} while (remain > 0);
 	}
 

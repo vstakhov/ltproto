@@ -56,7 +56,7 @@ wait_for_server (void)
 
 static void
 perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t bytes,
-		int server_core, int client_core)
+		int server_core, int client_core, int strict_check)
 {
 	pid_t spid;
 	void *tdata, *mod;
@@ -69,14 +69,14 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	fflush (stdout);
 	port = rand () % 20000 + 20000;
 	mod = ltproto_select_module (mname);
-	spid = fork_server (port, buflen, mod, server_core);
+	spid = fork_server (port, buflen, mod, server_core, strict_check);
 	assert (spid != -1);
 	wait_for_server ();
 	if (client_core != -1) {
 		bind_to_core (client_core);
 	}
 	start_test_time (&tdata);
-	assert (do_client (port, buflen, bytes / (uint64_t)buflen, mod, mname) != -1);
+	assert (do_client (port, buflen, bytes / (uint64_t)buflen, mod, mname, strict_check) != -1);
 	msec = end_test_time (tdata);
 	if (!compact) {
 		printf ("Send buffer: %s, ", print_bytes (buflen));
@@ -286,7 +286,7 @@ syscalls_test (void)
 static void
 usage (void)
 {
-	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-t <tests>] [-c same|different] [-fqh]\n");
+	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-t <tests>] [-c same|different] [-fqhv]\n");
 	exit (EXIT_FAILURE);
 }
 
@@ -418,7 +418,7 @@ main (int argc, char **argv)
 	unsigned long buflen = 1024 * 1024;
 	uint64_t bytes = 8589934592ULL;
 	char c;
-	int client_core = -1, server_core = -1, full_test = 0;
+	int client_core = -1, server_core = -1, full_test = 0, strict_check = 0;
 	unsigned int i;
 
 	sigemptyset (&sigmask);
@@ -428,7 +428,7 @@ main (int argc, char **argv)
 	sa.sa_handler = usr1_handler;
 	sigaction (SIGUSR1, &sa, NULL);
 
-	while ((c = getopt (argc, argv, "qfc:b:t:s:h")) != -1) {
+	while ((c = getopt (argc, argv, "qfc:b:t:s:hv")) != -1) {
 		switch(c) {
 		case 'b':
 			if (optarg) {
@@ -452,6 +452,9 @@ main (int argc, char **argv)
 			break;
 		case 'f':
 			full_test = 1;
+			break;
+		case 'v':
+			strict_check = 1;
 			break;
 		case 'c':
 			if (optarg) {
@@ -512,8 +515,7 @@ main (int argc, char **argv)
 	for (i = 0; i < sizeof (tests_enabled) / sizeof (tests_enabled[0]); i ++) {
 		if (tests_enabled[i].enabled) {
 			perform_module_test_simple (tests_enabled[i].test_name, buflen,
-					bytes, server_core, client_core);
-			sleep (1);
+					bytes, server_core, client_core, strict_check);
 		}
 	}
 
