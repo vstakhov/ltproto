@@ -343,12 +343,12 @@ static struct {
 		{
 				"udp_shmem",
 				"UDP + shared memory module",
-				1
+				0
 		},
 		{
 				"unix_shmem",
 				"Unix socket + shared memory module",
-				1
+				0
 		},
 		{
 				"shmem",
