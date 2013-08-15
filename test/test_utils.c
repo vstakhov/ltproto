@@ -503,6 +503,7 @@ do_client_latency (u_short port, void *mod, const char *modname, uint64_t *dest)
 	struct ltproto_socket *sock;
 	struct sockaddr_in sin;
 	uint8_t *tdata;
+	int r;
 
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons (port);
@@ -518,7 +519,7 @@ do_client_latency (u_short port, void *mod, const char *modname, uint64_t *dest)
 		goto err;
 	}
 
-	assert (ltproto_read (sock, tdata, TIME_LEN) == TIME_LEN);
+	ltproto_read (sock, tdata, TIME_LEN);
 	*dest = end_test_time ((void *)tdata);
 
 	ltproto_close (sock);
@@ -567,9 +568,8 @@ print_nanoseconds (uint64_t nsec)
 	uint64_t quotient = nsec, cur = nsec;
 	int i;
 
-	for (i = 0; i < 4; i ++) {
+	for (i = 0; i < 3; i ++) {
 		if (cur < 1000) {
-			quotient /= 1000;
 			break;
 		}
 		cur = quotient / 1000;
