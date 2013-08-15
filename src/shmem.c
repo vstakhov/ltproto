@@ -170,6 +170,7 @@ struct ltproto_socket *
 shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen)
 {
 	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk, *nsk;
+	int ready = 1;
 
 	nsk = lt_objcache_alloc (ctx->sk_cache);
 	assert (nsk != NULL);
@@ -191,10 +192,17 @@ shmem_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct 
 
 	if (nsk->rx_ring == NULL || nsk->tx_ring == NULL) {
 		lt_objcache_free (ctx->sk_cache, nsk);
+		ready = 0;
+		(void)write (ssk->tcp_fd, &ready, sizeof (int));
 		return NULL;
 	}
 	nsk->rx_ring->ref ++;
 	nsk->tx_ring->ref ++;
+
+	if (write (ssk->tcp_fd, &ready, sizeof (int)) == -1) {
+		lt_objcache_free (ctx->sk_cache, nsk);
+		return NULL;
+	}
 
 	return (struct ltproto_socket *)nsk;
 }
@@ -203,6 +211,7 @@ int
 shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
 	struct ltproto_socket_shmem *ssk = (struct ltproto_socket_shmem *)sk;
+	int ready = 0;
 
 	ssk->rx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
 			LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[0]);
@@ -224,6 +233,10 @@ shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const 
 	}
 
 	ssk->ring_owner = 1;
+
+	if (read (ssk->tcp_fd, &ready, sizeof (int)) == -1 || ready != 1) {
+		return -1;
+	}
 
 	return 0;
 }

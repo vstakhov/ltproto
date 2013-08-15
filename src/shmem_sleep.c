@@ -166,6 +166,7 @@ shmem_sleep_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
 		struct sockaddr *addr, socklen_t *addrlen)
 {
 	struct ltproto_socket_shmem_sleep *ssk = (struct ltproto_socket_shmem_sleep *)sk, *nsk;
+	int ready = 1;
 
 	nsk = lt_objcache_alloc (ctx->sk_cache);
 	assert (nsk != NULL);
@@ -177,6 +178,8 @@ shmem_sleep_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
 	}
 	if (read (ssk->tcp_fd, &nsk->tag[1], sizeof (ssk->tag[0])) == -1) {
 		lt_objcache_free (ctx->sk_cache, nsk);
+		ready = 0;
+		(void)write (ssk->tcp_fd, &ready, sizeof (int));
 		return NULL;
 	}
 	/* Attach ring */
@@ -193,6 +196,11 @@ shmem_sleep_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
 	nsk->rx_ring->ref ++;
 	nsk->tx_ring->ref ++;
 
+	if (write (ssk->tcp_fd, &ready, sizeof (int)) == -1) {
+		lt_objcache_free (ctx->sk_cache, nsk);
+		return NULL;
+	}
+
 	return (struct ltproto_socket *)nsk;
 }
 
@@ -201,6 +209,7 @@ shmem_sleep_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
 		const struct sockaddr *addr, socklen_t addrlen)
 {
 	struct ltproto_socket_shmem_sleep *ssk = (struct ltproto_socket_shmem_sleep *)sk;
+	int ready = 0;
 
 	/* Inverse the order of tags */
 	ssk->rx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
@@ -223,6 +232,10 @@ shmem_sleep_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk,
 		return -1;
 	}
 	ssk->ring_owner = 1;
+
+	if (read (ssk->tcp_fd, &ready, sizeof (int)) == -1 || ready != 1) {
+		return -1;
+	}
 
 	return 0;
 }
