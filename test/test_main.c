@@ -99,38 +99,56 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	kill (spid, SIGKILL);
 }
 
+static int
+uint64_cmp (const void *a, const void *b)
+{
+	const uint64_t *ia = a, *ib = b;
+
+	return (*ia - *ib);
+}
+
 static void
 perform_module_test_latency (const char *mname,
 		int server_core, int client_core)
 {
 	pid_t spid;
 	void *tdata, *mod;
-	uint64_t msec;
+	uint64_t *msec;
 	short port;
+	int i;
+	const int cycles = 20;
 
 	if (!compact) {
 		printf ("Test for module: %s\n", mname);
 	}
 	fflush (stdout);
-	port = rand () % 20000 + 20000;
-	mod = ltproto_select_module (mname);
-	spid = fork_server_latency (port, mod, server_core);
-	assert (spid != -1);
-	wait_for_server ();
-	if (client_core != -1) {
-		bind_to_core (client_core);
+
+	msec = calloc (cycles, sizeof (msec[0]));
+	for (i = 0; i < cycles; i ++) {
+		port = rand () % 20000 + 20000;
+		mod = ltproto_select_module (mname);
+		spid = fork_server_latency (port, mod, server_core);
+		assert (spid != -1);
+		wait_for_server ();
+		if (client_core != -1) {
+			bind_to_core (client_core);
+		}
+		start_test_time (&tdata);
+		assert (do_client_latency (port, mod, mname, &msec[i]) != -1);
+		kill (spid, SIGKILL);
 	}
-	start_test_time (&tdata);
-	assert (do_client_latency (port, mod, mname, &msec) != -1);
+
+	qsort (msec, cycles, sizeof (msec[0]), uint64_cmp);
+
 	if (!compact) {
-		printf ("Latency: %s\n", print_nanoseconds (msec));
+		printf ("Latency: %s\n", print_nanoseconds (msec[cycles/2]));
 	}
 	else {
-		printf ("%ju\n", (uintmax_t)msec);
+		printf ("%ju\n", (uintmax_t)msec[cycles/2]);
 	}
 
 	fflush (stdout);
-	kill (spid, SIGKILL);
+
 }
 
 typedef void (*alloc_test_func)(void **chunks, int chunks_count, int chunk_length);
