@@ -136,6 +136,7 @@ ssize_t
 null_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len)
 {
 	/* Force TCP connection */
+	errno = EINVAL;
 	return -1;
 }
 
@@ -143,6 +144,7 @@ ssize_t
 null_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len)
 {
 	/* Force TCP connection */
+	errno = EINVAL;
 	return -1;
 }
 
