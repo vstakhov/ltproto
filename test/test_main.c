@@ -99,6 +99,40 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	kill (spid, SIGKILL);
 }
 
+static void
+perform_module_test_latency (const char *mname,
+		int server_core, int client_core)
+{
+	pid_t spid;
+	void *tdata, *mod;
+	uint64_t msec;
+	short port;
+
+	if (!compact) {
+		printf ("Test for module: %s\n", mname);
+	}
+	fflush (stdout);
+	port = rand () % 20000 + 20000;
+	mod = ltproto_select_module (mname);
+	spid = fork_server_latency (port, mod, server_core);
+	assert (spid != -1);
+	wait_for_server ();
+	if (client_core != -1) {
+		bind_to_core (client_core);
+	}
+	start_test_time (&tdata);
+	assert (do_client_latency (port, mod, mname, &msec) != -1);
+	if (!compact) {
+		printf ("Latency: %s\n", print_nanoseconds (msec));
+	}
+	else {
+		printf ("%ju\n", (uintmax_t)msec);
+	}
+
+	fflush (stdout);
+	kill (spid, SIGKILL);
+}
+
 typedef void (*alloc_test_func)(void **chunks, int chunks_count, int chunk_length);
 
 static void
@@ -286,7 +320,7 @@ syscalls_test (void)
 static void
 usage (void)
 {
-	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-t <tests>] [-c same|different] [-fqhv]\n");
+	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-t <tests>] [-c same|different] [-fqhvl]\n");
 	exit (EXIT_FAILURE);
 }
 
@@ -418,7 +452,8 @@ main (int argc, char **argv)
 	unsigned long buflen = 1024 * 1024;
 	uint64_t bytes = 8589934592ULL;
 	char c;
-	int client_core = -1, server_core = -1, full_test = 0, strict_check = 0;
+	int client_core = -1, server_core = -1, full_test = 0,
+			strict_check = 0, test_latency = 0;
 	unsigned int i;
 
 	sigemptyset (&sigmask);
@@ -428,7 +463,7 @@ main (int argc, char **argv)
 	sa.sa_handler = usr1_handler;
 	sigaction (SIGUSR1, &sa, NULL);
 
-	while ((c = getopt (argc, argv, "qfc:b:t:s:hv")) != -1) {
+	while ((c = getopt (argc, argv, "qfc:b:t:s:hvl")) != -1) {
 		switch(c) {
 		case 'b':
 			if (optarg) {
@@ -487,6 +522,9 @@ main (int argc, char **argv)
 				usage ();
 			}
 			break;
+		case 'l':
+			test_latency = 1;
+			break;
 		default:
 			usage ();
 			break;
@@ -514,8 +552,13 @@ main (int argc, char **argv)
 
 	for (i = 0; i < sizeof (tests_enabled) / sizeof (tests_enabled[0]); i ++) {
 		if (tests_enabled[i].enabled) {
-			perform_module_test_simple (tests_enabled[i].test_name, buflen,
+			if (test_latency) {
+				perform_module_test_latency (tests_enabled[i].test_name, server_core, client_core);
+			}
+			else {
+				perform_module_test_simple (tests_enabled[i].test_name, buflen,
 					bytes, server_core, client_core, strict_check);
+			}
 		}
 	}
 

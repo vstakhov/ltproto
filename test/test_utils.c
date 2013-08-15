@@ -31,6 +31,12 @@
 
 sig_atomic_t got_term = 0;
 
+#ifdef HAVE_CLOCK_GETTIME
+#define TIME_LEN sizeof (struct timespec)
+#else
+#define TIME_LEN sizeof (struct timeval)
+#endif
+
 /**
  * Start time of some test
  * @param time_data opaque data that is used and allocated internally
@@ -419,6 +425,110 @@ err:
 }
 
 /**
+ * Fork server to test latency
+ * @param port port to bind
+ * @param recv_buffer_size size of receive buffer
+ * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
+ */
+pid_t
+fork_server_latency (u_short port, void *mod, int corenum)
+{
+	pid_t pid;
+	struct ltproto_socket *sock, *conn = NULL;
+	struct sockaddr_in sin;
+	socklen_t slen = sizeof (struct sockaddr_in);
+	sigset_t sigmask;
+	struct sigaction sa;
+	void *tdata;
+
+	pid = fork ();
+
+	switch (pid) {
+	case 0:
+		goto do_client;
+	case -1:
+		return -1;
+	default:
+		return pid;
+	}
+
+do_client:
+	if (corenum != -1) {
+		bind_to_core (corenum);
+	}
+	sigemptyset (&sigmask);
+	sigaddset (&sigmask, SIGUSR1);
+	memset (&sa, 0, sizeof (sa));
+	sa.sa_mask = sigmask;
+	sa.sa_handler = server_term_handler;
+	sigaction (SIGTERM, &sa, NULL);
+
+	assert (ltproto_socket (mod, &sock) != -1);
+	assert (sock != NULL);
+
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons (port);
+	sin.sin_addr.s_addr = INADDR_ANY;
+
+	assert (ltproto_bind (sock, (struct sockaddr *)&sin, slen) != -1);
+	assert (ltproto_listen (sock, -1) != -1);
+
+	/* Tell that we are ready */
+	kill (getppid (), SIGUSR1);
+
+	conn = ltproto_accept (sock, (struct sockaddr *)&sin, &slen);
+
+	start_test_time (&tdata);
+	assert (ltproto_write (conn, tdata, TIME_LEN) == TIME_LEN);
+
+	free (tdata);
+	ltproto_close (conn);
+
+	ltproto_close (sock);
+	exit (EXIT_SUCCESS);
+
+	return 0;
+}
+
+/**
+ * Perform client test
+ * @param port port to connect
+ * @param send_buffer_size size of send buffer
+ * @param repeat_count how many times this buffer should be sent
+ * @return
+ */
+int
+do_client_latency (u_short port, void *mod, const char *modname, uint64_t *dest)
+{
+	struct ltproto_socket *sock;
+	struct sockaddr_in sin;
+	uint8_t *tdata;
+
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons (port);
+	sin.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
+
+
+	tdata = calloc (1, TIME_LEN);
+	assert (ltproto_socket (mod, &sock) != -1);
+	assert (sock != NULL);
+
+	if (ltproto_connect (sock, (struct sockaddr *)&sin, sizeof (sin)) == -1) {
+		perror ("connect failed");
+		goto err;
+	}
+
+	assert (ltproto_read (sock, tdata, TIME_LEN) == TIME_LEN);
+	*dest = end_test_time ((void *)tdata);
+
+	ltproto_close (sock);
+	return 0;
+err:
+	ltproto_close (sock);
+	return -1;
+}
+
+/**
  * Return humanized number of bytes
  * @param bytes bytes to print
  * @return static buffer with desired string
@@ -440,6 +550,33 @@ print_bytes (uint64_t bytes)
 	}
 	snprintf (buf, sizeof (buf), "%lu.%lu%cb", (unsigned long)cur,
 			(unsigned long)quotient % 1024, prefixes[i]);
+
+	return buf;
+}
+
+/**
+ * Return humanized number of nanoseconds
+ * @param bytes bytes to print
+ * @return static buffer with desired string
+ */
+char*
+print_nanoseconds (uint64_t nsec)
+{
+	static char buf[32];
+	const char *prefixes[] = {"nanoseconds","microseconds","milliseconds","seconds"};
+	uint64_t quotient = nsec, cur = nsec;
+	int i;
+
+	for (i = 0; i < 4; i ++) {
+		if (cur < 1000) {
+			quotient /= 1000;
+			break;
+		}
+		cur = quotient / 1000;
+		quotient = cur;
+	}
+	snprintf (buf, sizeof (buf), "%ju.%ju %s", (uintmax_t)cur,
+			(uintmax_t)quotient % 1000, prefixes[i]);
 
 	return buf;
 }
