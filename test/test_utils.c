@@ -481,6 +481,7 @@ do_client:
 	start_test_time (&tdata);
 	assert (ltproto_write (conn, tdata, TIME_LEN) == TIME_LEN);
 
+	ltproto_read (conn, tdata, TIME_LEN);
 	free (tdata);
 	ltproto_close (conn);
 
@@ -519,7 +520,7 @@ do_client_latency (u_short port, void *mod, const char *modname, uint64_t *dest)
 		goto err;
 	}
 
-	ltproto_read (sock, tdata, TIME_LEN);
+	assert (ltproto_read (sock, tdata, TIME_LEN) == TIME_LEN);
 	*dest = end_test_time ((void *)tdata);
 
 	ltproto_close (sock);
@@ -565,14 +566,14 @@ print_nanoseconds (uint64_t nsec)
 {
 	static char buf[32];
 	const char *prefixes[] = {"nanoseconds","microseconds","milliseconds","seconds"};
-	uint64_t quotient = nsec, cur = nsec;
+	uint64_t quotient = nsec * 1000, cur = nsec * 1000;
 	int i;
 
 	for (i = 0; i < 3; i ++) {
+		cur = quotient / 1000;
 		if (cur < 1000) {
 			break;
 		}
-		cur = quotient / 1000;
 		quotient = cur;
 	}
 	snprintf (buf, sizeof (buf), "%ju.%ju %s", (uintmax_t)cur,
