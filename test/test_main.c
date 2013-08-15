@@ -451,7 +451,7 @@ main (int argc, char **argv)
 	struct sigaction sa;
 	unsigned long buflen = 1024 * 1024;
 	uint64_t bytes = 8589934592ULL;
-	char c;
+	char c, *end;
 	int client_core = -1, server_core = -1, full_test = 0,
 			strict_check = 0, test_latency = 0;
 	unsigned int i;
@@ -493,13 +493,20 @@ main (int argc, char **argv)
 			break;
 		case 'c':
 			if (optarg) {
-				if (strcmp (optarg, "same") == 0) {
+				if (optarg[0] == 's') {
 					client_core = 0;
 					server_core = 0;
 				}
-				else if (strcmp (optarg, "different") == 0) {
+				else if (optarg[0] == 'd') {
 					client_core = 1;
 					server_core = 0;
+				}
+				else if (optarg[0] >= '0' && optarg[0] <= '9') {
+					client_core = strtoul (optarg, &end, 10);
+					if (*end != ',') {
+						usage ();
+					}
+					server_core = strtoul (end + 1, NULL, 10);
 				}
 				else {
 					usage ();
