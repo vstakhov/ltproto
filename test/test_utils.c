@@ -481,7 +481,7 @@ do_client:
 	start_test_time (&tdata);
 	assert (ltproto_write (conn, tdata, TIME_LEN) == TIME_LEN);
 
-	ltproto_read (conn, tdata, TIME_LEN);
+	ltproto_read (conn, tdata, 0);
 	free (tdata);
 	ltproto_close (conn);
 

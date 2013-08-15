@@ -287,8 +287,10 @@ ltproto_read (struct ltproto_socket *sk, void *buf, size_t len)
 	int r;
 
 	if (sk != NULL) {
-		if ((r = sk->mod->mod->module_read_func (sk->mod->ctx, sk, buf, len)) == -1) {
-			return read (sk->tcp_fd, buf, len);
+		while ((r = sk->mod->mod->module_read_func (sk->mod->ctx, sk, buf, len)) == -1) {
+			if (errno != EAGAIN && errno != EINTR) {
+				return read (sk->tcp_fd, buf, len);
+			}
 		}
 		return r;
 	}
@@ -310,8 +312,10 @@ ltproto_write (struct ltproto_socket *sk, const void *buf, size_t len)
 	int r;
 
 	if (sk != NULL) {
-		if ((r = sk->mod->mod->module_write_func (sk->mod->ctx, sk, buf, len)) == -1) {
-			return write (sk->tcp_fd, buf, len);
+		while ((r = sk->mod->mod->module_write_func (sk->mod->ctx, sk, buf, len)) == -1) {
+			if (errno != EAGAIN && errno != EINTR) {
+				return write (sk->tcp_fd, buf, len);
+			}
 		}
 		return r;
 	}

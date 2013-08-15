@@ -7,7 +7,7 @@ else
 	NPROC=$(nproc)
 fi
 
-TYPES="null unix shmem shmem_sleep"
+TYPES="null pipe unix shmem shmem_sleep"
 TFILE="/tmp/ltproto_lat"
 
 for _type in $TYPES ; do

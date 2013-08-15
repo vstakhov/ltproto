@@ -107,23 +107,37 @@ pipe_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct s
 {
 	struct ltproto_socket *nsk;
 	char fifoname[PATH_MAX];
-	int afd, len;
+	int afd, len, r, ready;
 
-	if (read (sk->tcp_fd, &len, sizeof (len)) == -1) {
-		return NULL;
+	while (read (sk->tcp_fd, &len, sizeof (len)) == -1) {
+		if (errno != EINTR && errno != EAGAIN) {
+			return NULL;
+		}
 	}
-	if (read (sk->tcp_fd, fifoname, MIN (len, sizeof (fifoname) - 1)) == -1) {
-		return NULL;
+	while ((r = read (sk->tcp_fd, fifoname, MIN (len, sizeof (fifoname) - 1))) == -1) {
+		if (errno != EINTR && errno != EAGAIN) {
+			return NULL;
+		}
 	}
+
+	fifoname[r] = '\0';
 
 	afd = open (fifoname, O_RDWR);
 	if (afd == -1) {
+		ready = 0;
+		write (sk->tcp_fd, &ready, sizeof (int));
 		return NULL;
 	}
 
 	nsk = lt_objcache_alloc (ctx->sk_cache);
 	assert (nsk != NULL);
 	nsk->fd = afd;
+
+	ready = 1;
+	if (write (sk->tcp_fd, &ready, sizeof (int)) == -1) {
+		lt_objcache_free (ctx->sk_cache, nsk);
+		return NULL;
+	}
 
 	return nsk;
 }
@@ -132,7 +146,7 @@ int
 pipe_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen)
 {
 	char tmpname[PATH_MAX] = "/tmp/ltproto_pipe_XXXXXX";
-	int len;
+	int len, ready;
 
 	mkdtemp (tmpname);
 	len = strlen (tmpname);
@@ -154,6 +168,10 @@ pipe_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const s
 		return -1;
 	}
 
+	if (read (sk->tcp_fd, &ready, sizeof (int)) == -1 || ready != 1) {
+		return -1;
+	}
+
 	return sk->fd;
 }
 
@@ -166,7 +184,22 @@ pipe_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf,
 ssize_t
 pipe_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len)
 {
-	return write (sk->fd, buf, len);
+	ssize_t r;
+	struct pollfd pfd;
+
+	pfd.events = POLL_OUT;
+	pfd.fd = sk->fd;
+
+	while ((r = write (sk->fd, buf, len)) == -1) {
+		if (errno != EAGAIN && errno != EPIPE && errno != EINTR) {
+			return -1;
+		}
+		if (poll (&pfd, 1, -1) == -1) {
+			return -1;
+		}
+	}
+
+	return r;
 }
 
 int
