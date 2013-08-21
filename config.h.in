@@ -54,6 +54,7 @@
 #cmakedefine HAVE_HAVE_MONITOR_MWAIT 1
 #cmakedefine HAVE_FUTEX	1
 #cmakedefine HAVE_UMTX_OP	1
+#cmakedefine HAVE_NUMA_H	1
 
 /* sys/types */
 #ifdef HAVE_SYS_TYPES_H

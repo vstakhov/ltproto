@@ -37,6 +37,7 @@ void * system_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_a
 void * system_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag);
 void system_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size);
 void system_destroy_func (struct lt_allocator_ctx *ctx);
+void system_set_numa_func (struct lt_allocator_ctx *ctx, int node);
 
 
 allocator_t system_allocator = {
@@ -46,7 +47,8 @@ allocator_t system_allocator = {
 	.allocator_alloc_func = system_alloc_func,
 	.allocator_attachtag_func = system_attachtag_func,
 	.allocator_free_func = system_free_func,
-	.allocator_destroy_func = system_destroy_func
+	.allocator_destroy_func = system_destroy_func,
+	.allocator_set_numa_node = system_set_numa_func
 };
 
 int
@@ -59,8 +61,16 @@ system_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq)
 void *
 system_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_tag *tag)
 {
+	void *ptr;
+
 	memset (tag, 0, sizeof (struct lt_alloc_tag));
-	return malloc (size);
+	ptr = malloc (size);
+#ifdef HAVE_NUMA_H
+	if (ptr != NULL && ctx->numa_node != 0) {
+		numa_tonode_memory (ptr, size, ctx->numa_node);
+	}
+#endif
+	return ptr;
 }
 
 void *
@@ -79,4 +89,10 @@ void
 system_destroy_func (struct lt_allocator_ctx *ctx)
 {
 	return;
+}
+
+void
+system_set_numa_func (struct lt_allocator_ctx *ctx, int node)
+{
+	ctx->numa_node = node;
 }

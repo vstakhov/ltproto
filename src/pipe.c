@@ -63,12 +63,20 @@ module_t pipe_module = {
 	.module_destroy_func = pipe_destroy_func
 };
 
+struct ltproto_socket_pipe {
+	int fd;							// Socket descriptor
+	int tcp_fd;						// TCP link socket
+	struct ltproto_module *mod;		// Module handling this socket
+	UT_hash_handle hh;				// Hash entry
+	char *pname;					// The name of pipe
+};
+
 int
 pipe_init_func (struct lt_module_ctx **ctx)
 {
 	*ctx = calloc (1, sizeof (struct lt_module_ctx));
 	(*ctx)->len = sizeof (struct lt_module_ctx);
-	(*ctx)->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket));
+	(*ctx)->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_pipe));
 
 	return 0;
 }
@@ -76,12 +84,13 @@ pipe_init_func (struct lt_module_ctx **ctx)
 struct ltproto_socket *
 pipe_socket_func (struct lt_module_ctx *ctx)
 {
-	struct ltproto_socket *sk;
+	struct ltproto_socket_pipe *sk;
 
 	sk = lt_objcache_alloc (ctx->sk_cache);
+	sk->pname = NULL;
 	assert (sk != NULL);
 
-	return sk;
+	return (struct ltproto_socket *)sk;
 }
 
 int
@@ -105,7 +114,7 @@ pipe_listen_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, int back
 struct ltproto_socket *
 pipe_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct sockaddr *addr, socklen_t *addrlen)
 {
-	struct ltproto_socket *nsk;
+	struct ltproto_socket_pipe *nsk;
 	char fifoname[PATH_MAX];
 	int afd, len, r, ready;
 
@@ -132,6 +141,7 @@ pipe_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct s
 	nsk = lt_objcache_alloc (ctx->sk_cache);
 	assert (nsk != NULL);
 	nsk->fd = afd;
+	nsk->pname = NULL;
 
 	ready = 1;
 	if (write (sk->tcp_fd, &ready, sizeof (int)) == -1) {
@@ -139,7 +149,22 @@ pipe_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct s
 		return NULL;
 	}
 
-	return nsk;
+	return (struct ltproto_socket *)nsk;
+}
+
+static void
+pipe_remove_pipe (struct ltproto_socket_pipe *sk)
+{
+	char *slash;
+	if (sk->pname != NULL) {
+		slash = strrchr (sk->pname, '/');
+		(void)unlink (sk->pname);
+		if (slash != NULL) {
+			*slash = '\0';
+			(void)rmdir (sk->pname);
+		}
+		free (sk->pname);
+	}
 }
 
 int
@@ -147,32 +172,38 @@ pipe_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const s
 {
 	char tmpname[PATH_MAX] = "/tmp/ltproto_pipe_XXXXXX";
 	int len, ready;
+	struct ltproto_socket_pipe *ssk = sk;
 
 	mkdtemp (tmpname);
 	len = strlen (tmpname);
 	snprintf (tmpname + len, sizeof (tmpname) - len, "/fifo");
 	assert (mkfifo (tmpname, 0600) == 0);
-	sk->fd = open (tmpname, O_RDWR);
-	if (sk->fd == -1) {
+	ssk->fd = open (tmpname, O_RDWR);
+	if (ssk->fd == -1) {
 		return -1;
 	}
 
 	/* Send pipe name over tcp socket */
+	ssk->pname = strdup (tmpname);
 	len = strlen (tmpname);
-	if (write (sk->tcp_fd, &len, sizeof (len)) == -1) {
-		close (sk->fd);
+	if (write (ssk->tcp_fd, &len, sizeof (len)) == -1) {
+		close (ssk->fd);
+		pipe_remove_pipe (ssk);
 		return -1;
 	}
-	if (write (sk->tcp_fd, tmpname, len) == -1) {
-		close (sk->fd);
+	if (write (ssk->tcp_fd, tmpname, len) == -1) {
+		close (ssk->fd);
+		pipe_remove_pipe (ssk);
 		return -1;
 	}
 
-	if (read (sk->tcp_fd, &ready, sizeof (int)) == -1 || ready != 1) {
+	if (read (ssk->tcp_fd, &ready, sizeof (int)) == -1 || ready != 1) {
+		close (ssk->fd);
+		pipe_remove_pipe (ssk);
 		return -1;
 	}
 
-	return sk->fd;
+	return ssk->fd;
 }
 
 ssize_t
@@ -222,11 +253,12 @@ int
 pipe_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
 	int serrno, ret;
-	struct sockaddr_un sun;
+	struct ltproto_socket_pipe *ssk = sk;
 
-	ret = close (sk->fd);
+	ret = close (ssk->fd);
+	pipe_remove_pipe (ssk);
 	serrno = errno;
-	lt_objcache_free (ctx->sk_cache, sk);
+	lt_objcache_free (ctx->sk_cache, ssk);
 	errno = serrno;
 
 	return ret;

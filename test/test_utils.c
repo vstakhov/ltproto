@@ -310,7 +310,10 @@ do_client:
 	assert (posix_memalign ((void **)&recv_buf, 16, recv_buffer_size) == 0);
 	assert (recv_buf != NULL);
 
-	assert (ltproto_bind (sock, (struct sockaddr *)&sin, slen) != -1);
+	while (ltproto_bind (sock, (struct sockaddr *)&sin, slen) == -1) {
+		/* XXX: sleep if we cannot bind */
+		sleep (1);
+	}
 	assert (ltproto_listen (sock, -1) != -1);
 
 	/* Tell that we are ready */

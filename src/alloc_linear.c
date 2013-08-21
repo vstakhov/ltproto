@@ -25,6 +25,9 @@
 #include "ltproto.h"
 #include "ltproto_internal.h"
 #include <assert.h>
+#ifdef HAVE_NUMA_H
+# include <numa.h>
+#endif
 
 /**
  * @file alloc_linear.c
@@ -43,6 +46,7 @@ void * linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_a
 void * linear_attachtag_func (struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag);
 void linear_free_func (struct lt_allocator_ctx *ctx, void *addr, size_t size);
 void linear_destroy_func (struct lt_allocator_ctx *ctx);
+void linear_set_numa_func (struct lt_allocator_ctx *ctx, int node);
 
 struct alloc_chunk;
 
@@ -76,6 +80,7 @@ struct lt_linear_allocator_ctx {
 	size_t len;
 	size_t bytes_allocated;
 	uint64_t seq;
+	int numa_node;
 	struct ltproto_ctx *lib_ctx;		// Parent ctx
 	int use_sysv;						// Use sysV shared memory
 	TAILQ_HEAD (ar_head, alloc_arena) arenas;	// Shared arenas
@@ -97,7 +102,8 @@ allocator_t linear_allocator = {
 	.allocator_alloc_func = linear_alloc_func,
 	.allocator_attachtag_func = linear_attachtag_func,
 	.allocator_free_func = linear_free_func,
-	.allocator_destroy_func = linear_destroy_func
+	.allocator_destroy_func = linear_destroy_func,
+	.allocator_set_numa_node = linear_set_numa_func
 };
 
 
@@ -139,6 +145,11 @@ create_shared_arena_posix (struct lt_linear_allocator_ctx *ctx, size_t size)
 		errno = serrno;
 		return NULL;
 	}
+#ifdef HAVE_NUMA_H
+	if (ctx->numa_node != 0) {
+		numa_tonode_memory (map, size, ctx->numa_node);
+	}
+#endif
 	close (fd);
 
 	new = calloc (1, sizeof (struct alloc_arena));
@@ -177,6 +188,11 @@ create_shared_arena_sysv (struct lt_linear_allocator_ctx *ctx, size_t size)
 	if (map == (void *)-1) {
 		return NULL;
 	}
+#ifdef HAVE_NUMA_H
+	if (ctx->numa_node != 0) {
+		numa_tonode_memory (map, size, ctx->numa_node);
+	}
+#endif
 
 	new = calloc (1, sizeof (struct alloc_arena));
 	if (new == NULL) {
@@ -692,4 +708,10 @@ linear_destroy_func (struct lt_allocator_ctx *ctx)
 	}
 
 	free (ctx);
+}
+
+void
+linear_set_numa_func (struct lt_allocator_ctx *ctx, int node)
+{
+	ctx->numa_node = node;
 }

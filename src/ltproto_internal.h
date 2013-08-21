@@ -101,6 +101,7 @@ typedef struct allocator_s {
 	void * (*allocator_attachtag_func)(struct lt_allocator_ctx *ctx, struct lt_alloc_tag *tag);
 	void (*allocator_free_func)(struct lt_allocator_ctx *ctx, void *addr, size_t size);
 	void (*allocator_destroy_func)(struct lt_allocator_ctx *ctx);
+	void (*allocator_set_numa_node)(struct lt_allocator_ctx *ctx, int node);
 } allocator_t;
 
 /**
@@ -110,6 +111,7 @@ struct lt_allocator_ctx {
 	size_t len;
 	size_t bytes_allocated;
 	uint64_t seq;
+	int numa_node;
 	struct ltproto_ctx *lib_ctx;	// Parent ctx
 };
 
