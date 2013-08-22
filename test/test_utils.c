@@ -476,7 +476,10 @@ do_client:
 	sin.sin_port = htons (port);
 	sin.sin_addr.s_addr = INADDR_ANY;
 
-	assert (ltproto_bind (sock, (struct sockaddr *)&sin, slen) != -1);
+	while (ltproto_bind (sock, (struct sockaddr *)&sin, slen) == -1) {
+		/* XXX: sleep if we cannot bind */
+		sleep (1);
+	}
 	assert (ltproto_listen (sock, -1) != -1);
 
 	/* Tell that we are ready */
@@ -651,8 +654,11 @@ bind_to_core (int corenum)
 	cpuset_setaffinity (CPU_LEVEL_WHICH, CPU_WHICH_PID, -1, sizeof (mask), &mask);
 #endif
 #ifdef HAVE_NUMA_H
+	int node;
 	if (numa_available () != -1) {
-		ltproto_bind_numa (numa_node_of_cpu (corenum));
+		node = numa_node_of_cpu (corenum);
+		numa_set_preferred (node);
+		ltproto_bind_numa (node);
 	}
 #endif
 }
