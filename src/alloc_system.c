@@ -54,7 +54,9 @@ allocator_t system_allocator = {
 int
 system_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq)
 {
-	*ctx = NULL;
+	*ctx = calloc (1, sizeof (struct lt_allocator_ctx));
+	(*ctx)->numa_node = -1;
+
 	return 0;
 }
 
@@ -66,7 +68,7 @@ system_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_ta
 	memset (tag, 0, sizeof (struct lt_alloc_tag));
 	ptr = malloc (size);
 #ifdef HAVE_NUMA_H
-	if (ptr != NULL && ctx->numa_node != 0) {
+	if (ptr != NULL && ctx->numa_node != -1) {
 		numa_tonode_memory (ptr, size, ctx->numa_node);
 	}
 #endif

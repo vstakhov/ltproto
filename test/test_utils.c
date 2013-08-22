@@ -28,6 +28,9 @@
 #include <assert.h>
 #include <math.h>
 #include <cpuid.h>
+#ifdef HAVE_NUMA_H
+# include <numa.h>
+#endif
 
 sig_atomic_t got_term = 0;
 
@@ -507,7 +510,6 @@ do_client_latency (u_short port, void *mod, const char *modname, uint64_t *dest)
 	struct ltproto_socket *sock;
 	struct sockaddr_in sin;
 	uint8_t *tdata;
-	int r;
 
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons (port);
@@ -647,5 +649,10 @@ bind_to_core (int corenum)
 	CPU_ZERO (&mask);
 	CPU_SET (corenum, &mask);
 	cpuset_setaffinity (CPU_LEVEL_WHICH, CPU_WHICH_PID, -1, sizeof (mask), &mask);
+#endif
+#ifdef HAVE_NUMA_H
+	if (numa_available () != -1) {
+		ltproto_bind_numa (numa_node_of_cpu (corenum));
+	}
 #endif
 }

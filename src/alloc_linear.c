@@ -146,7 +146,7 @@ create_shared_arena_posix (struct lt_linear_allocator_ctx *ctx, size_t size)
 		return NULL;
 	}
 #ifdef HAVE_NUMA_H
-	if (ctx->numa_node != 0) {
+	if (ctx->numa_node != -1) {
 		numa_tonode_memory (map, size, ctx->numa_node);
 	}
 #endif
@@ -189,7 +189,7 @@ create_shared_arena_sysv (struct lt_linear_allocator_ctx *ctx, size_t size)
 		return NULL;
 	}
 #ifdef HAVE_NUMA_H
-	if (ctx->numa_node != 0) {
+	if (ctx->numa_node != -1) {
 		numa_tonode_memory (map, size, ctx->numa_node);
 	}
 #endif
@@ -467,6 +467,7 @@ linear_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq)
 	assert (new != NULL);
 	new->len = sizeof (struct lt_linear_allocator_ctx);
 	new->seq = init_seq;
+	new->numa_node = -1;
 
 	if (getenv ("LTPROTO_USE_SYSV") != NULL) {
 		new->use_sysv = 1;

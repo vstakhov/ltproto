@@ -450,3 +450,15 @@ ltproto_switch_allocator (const char *name)
 
 	return 0;
 }
+
+/**
+ * Bind the current allocator to the node specified
+ * @param numa_node number of numa node
+ */
+void
+ltproto_bind_numa (int numa_node)
+{
+	if (numa_node >= 0) {
+		lib_ctx->allocator->allocator_set_numa_node (lib_ctx->alloc_ctx, numa_node);
+	}
+}

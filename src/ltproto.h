@@ -204,4 +204,10 @@ void ltproto_free (size_t size, void *ptr);
  */
 int ltproto_switch_allocator (const char *name);
 
+/**
+ * Bind the current allocator to the node specified
+ * @param numa_node number of numa node
+ */
+void ltproto_bind_numa (int numa_node);
+
 #endif /* LTPROTO_H_ */
