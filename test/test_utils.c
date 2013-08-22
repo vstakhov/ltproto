@@ -501,7 +501,7 @@ do_client:
 	free (tdata);
 	while (!got_term) {
 		/* Wait for termination */
-		usleep (200000000L);
+		usleep (200000L);
 	}
 	ltproto_close (conn);
 
