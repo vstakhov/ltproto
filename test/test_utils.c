@@ -359,6 +359,7 @@ do_client:
 
 	ltproto_close (sock);
 	gperf_profiler_stop ();
+	ltproto_destroy ();
 	exit (EXIT_SUCCESS);
 
 	return 0;
@@ -427,7 +428,7 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, 
 
 	gperf_profiler_stop ();
 	ltproto_close (sock);
-	ltproto_destroy ();
+
 	return 0;
 err:
 	ltproto_close (sock);

@@ -687,6 +687,7 @@ linear_destroy_func (struct lt_allocator_ctx *ctx)
 	TAILQ_FOREACH_SAFE (ar, &real_ctx->arenas, link, tmp_ar) {
 		if (real_ctx->use_sysv) {
 			shmdt ((void *)ar->begin);
+			shmctl (ar->tag.seq, IPC_RMID, NULL);
 		}
 		else {
 			munmap ((void *)ar->begin, ar->len);
