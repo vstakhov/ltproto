@@ -315,6 +315,9 @@ do_client:
 
 	while (ltproto_bind (sock, (struct sockaddr *)&sin, slen) == -1) {
 		/* XXX: sleep if we cannot bind */
+		if (got_term) {
+			return -1;
+		}
 		sleep (1);
 	}
 	assert (ltproto_listen (sock, -1) != -1);
@@ -424,6 +427,7 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, 
 
 	gperf_profiler_stop ();
 	ltproto_close (sock);
+	ltproto_destroy ();
 	return 0;
 err:
 	ltproto_close (sock);
@@ -478,6 +482,9 @@ do_client:
 
 	while (ltproto_bind (sock, (struct sockaddr *)&sin, slen) == -1) {
 		/* XXX: sleep if we cannot bind */
+		if (got_term) {
+			return -1;
+		}
 		sleep (1);
 	}
 	assert (ltproto_listen (sock, -1) != -1);
@@ -490,11 +497,15 @@ do_client:
 	start_test_time (&tdata);
 	assert (ltproto_write (conn, tdata, TIME_LEN) == TIME_LEN);
 
-	ltproto_read (conn, tdata, 0);
 	free (tdata);
+	while (!got_term) {
+		/* Wait for termination */
+		usleep (200000000L);
+	}
 	ltproto_close (conn);
 
 	ltproto_close (sock);
+	ltproto_destroy ();
 	exit (EXIT_SUCCESS);
 
 	return 0;

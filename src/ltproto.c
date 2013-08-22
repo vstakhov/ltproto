@@ -287,6 +287,9 @@ ltproto_read (struct ltproto_socket *sk, void *buf, size_t len)
 	int r;
 
 	if (sk != NULL) {
+		if (len == 0) {
+			return read (sk->tcp_fd, buf, len);
+		}
 		while ((r = sk->mod->mod->module_read_func (sk->mod->ctx, sk, buf, len)) == -1) {
 			if (errno != EAGAIN && errno != EINTR) {
 				return read (sk->tcp_fd, buf, len);

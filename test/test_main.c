@@ -67,7 +67,7 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 		printf ("Test for module: %s\n", mname);
 	}
 	fflush (stdout);
-	port = rand () % 20000 + 20000;
+	port = 31119;
 	mod = ltproto_select_module (mname);
 	spid = fork_server (port, buflen, mod, server_core, strict_check);
 	assert (spid != -1);
@@ -96,7 +96,7 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	printf ("Send buffer: 4Mb, Recv buffer: 4Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
 #endif
 	fflush (stdout);
-	kill (spid, SIGKILL);
+	kill (spid, SIGTERM);
 }
 
 static int
@@ -125,7 +125,7 @@ perform_module_test_latency (const char *mname,
 
 	msec = calloc (cycles, sizeof (msec[0]));
 	for (i = 0; i < cycles; i ++) {
-		port = rand () % 20000 + 20000;
+		port = 31119;
 		mod = ltproto_select_module (mname);
 		spid = fork_server_latency (port, mod, server_core);
 		assert (spid != -1);
@@ -135,7 +135,7 @@ perform_module_test_latency (const char *mname,
 		}
 		start_test_time (&tdata);
 		assert (do_client_latency (port, mod, mname, &msec[i]) != -1);
-		kill (spid, SIGKILL);
+		kill (spid, SIGTERM);
 	}
 
 	qsort (msec, cycles, sizeof (msec[0]), uint64_cmp);
@@ -570,9 +570,6 @@ main (int argc, char **argv)
 		perform_allocator_test ("system", 10240, test_chunk_circular);
 		assert (ltproto_switch_allocator ("linear allocator") != -1);
 		perform_allocator_test ("linear", 10240, test_chunk_circular);
-	}
-	else {
-		assert (ltproto_switch_allocator ("linear allocator") != -1);
 	}
 
 	for (i = 0; i < sizeof (tests_enabled) / sizeof (tests_enabled[0]); i ++) {
