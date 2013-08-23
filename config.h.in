@@ -114,6 +114,8 @@
 
 #cmakedefine HAVE_UNIX_SEQPACKET 1
 
+#cmakedefine HAVE_CPUID_H		1
+
 
 /* cdefs */
 #ifdef HAVE_SYS_CDEFS_H

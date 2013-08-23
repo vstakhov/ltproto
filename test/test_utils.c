@@ -27,7 +27,9 @@
 #include "test_utils.h"
 #include <assert.h>
 #include <math.h>
-#include <cpuid.h>
+#ifdef HAVE_CPUID_H
+# include <cpuid.h>
+#endif
 #ifdef HAVE_NUMA_H
 # include <numa.h>
 #endif
@@ -213,6 +215,7 @@ murmur32_hash (char *in, uint32_t len)
 
 static int
 has_sse_42 (void) {
+#ifdef HAVE_CPUID_H
 	unsigned int eax, ebx, ecx, edx;
 
 	eax = ebx = ecx = edx = 0;
@@ -221,6 +224,7 @@ has_sse_42 (void) {
 	if (ecx & bit_SSE4_2) {
 		return 1;
 	}
+#endif
 
 	return 0;
 }
