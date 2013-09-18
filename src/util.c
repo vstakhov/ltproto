@@ -277,7 +277,8 @@ wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec)
 			break;
 		}
 		/* Need to spin */
-		(void)nanosleep (&ts, NULL);
+		sched_yield ();
+		//(void)nanosleep (&ts, NULL);
 		cycles ++;
 		if (cycles > 100) {
 			errno = ETIMEDOUT;

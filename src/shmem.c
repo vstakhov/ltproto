@@ -69,6 +69,9 @@ module_t shmem_module = {
 #define LT_DEFAULT_SLOTS 256
 #define LT_DEFAULT_BUF 4096
 
+static int lt_ring_slots = LT_DEFAULT_SLOTS;
+static int lt_ring_buf = LT_DEFAULT_BUF;
+
 struct lt_net_ring_slot {
 	unsigned int len;
 	unsigned int flags;
@@ -129,9 +132,21 @@ shmem_init_ring (struct lt_net_ring *ring, int nslots, int bufsize)
 int
 shmem_init_func (struct lt_module_ctx **ctx)
 {
+	char *lt_env;
+
 	*ctx = calloc (1, sizeof (struct lt_module_ctx));
 	(*ctx)->len = sizeof (struct lt_module_ctx);
 	(*ctx)->sk_cache = lt_objcache_create (sizeof (struct ltproto_socket_shmem));
+
+	lt_env = getenv ("LTPROTO_RING_SLOTS");
+	if (lt_env != NULL) {
+		lt_ring_slots = strtoul (lt_env, NULL, 10);
+	}
+
+	lt_env = getenv ("LTPROTO_RING_BUF");
+	if (lt_env != NULL) {
+		lt_ring_buf = strtoul (lt_env, NULL, 10);
+	}
 
 	return 0;
 }
@@ -214,15 +229,15 @@ shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const 
 	int ready = 0;
 
 	ssk->rx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
-			LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[0]);
+			LT_RING_SIZE (lt_ring_slots, lt_ring_buf), &ssk->tag[0]);
 	ssk->tx_ring = ctx->lib_ctx->allocator->allocator_alloc_func (ctx->lib_ctx->alloc_ctx,
-				LT_RING_SIZE (LT_DEFAULT_SLOTS, LT_DEFAULT_BUF), &ssk->tag[1]);
+				LT_RING_SIZE (lt_ring_slots, lt_ring_buf), &ssk->tag[1]);
 	if (ssk->rx_ring == NULL || ssk->tx_ring == NULL) {
 		return -1;
 	}
 
-	shmem_init_ring (ssk->rx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
-	shmem_init_ring (ssk->tx_ring, LT_DEFAULT_SLOTS, LT_DEFAULT_BUF);
+	shmem_init_ring (ssk->rx_ring, lt_ring_slots, lt_ring_buf);
+	shmem_init_ring (ssk->tx_ring, lt_ring_slots, lt_ring_buf);
 
 	/* Inverse the order of tags */
 	if (write (ssk->tcp_fd, &ssk->tag[1], sizeof (ssk->tag[0])) == -1) {
