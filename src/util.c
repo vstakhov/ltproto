@@ -431,3 +431,42 @@ lt_init_title (int argc, char *argv[], char *envp[])
 	return 0;
 #endif
 }
+
+
+ssize_t
+lt_read (int fd, void *buf, size_t buflen)
+{
+	ssize_t r;
+
+	for (;;) {
+		r = read (fd, buf, buflen);
+		if (r == -1) {
+			if (errno == EINTR || errno == EAGAIN) {
+				continue;
+			}
+			return -1;
+		}
+		break;
+	}
+
+	return r;
+}
+
+ssize_t
+lt_write (int fd, const void *buf, size_t buflen)
+{
+	ssize_t r;
+
+	for (;;) {
+		r = write (fd, buf, buflen);
+		if (r == -1) {
+			if (errno == EINTR || errno == EAGAIN) {
+				continue;
+			}
+			return -1;
+		}
+		break;
+	}
+
+	return r;
+}

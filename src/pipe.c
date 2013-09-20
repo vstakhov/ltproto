@@ -123,7 +123,7 @@ pipe_accept_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, struct s
 			return NULL;
 		}
 	}
-	while ((r = read (sk->tcp_fd, fifoname, MIN (len, sizeof (fifoname) - 1))) == -1) {
+	while ((r = lt_read (sk->tcp_fd, fifoname, MIN (len, sizeof (fifoname) - 1))) == -1) {
 		if (errno != EINTR && errno != EAGAIN) {
 			return NULL;
 		}
@@ -209,7 +209,7 @@ pipe_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const s
 ssize_t
 pipe_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len)
 {
-	return read (sk->fd, buf, len);
+	return lt_read (sk->fd, buf, len);
 }
 
 ssize_t
@@ -221,7 +221,7 @@ pipe_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const voi
 	pfd.events = POLL_OUT;
 	pfd.fd = sk->fd;
 
-	while ((r = write (sk->fd, buf, len)) == -1) {
+	while ((r = lt_write (sk->fd, buf, len)) == -1) {
 		if (errno != EAGAIN && errno != EPIPE && errno != EINTR) {
 			return -1;
 		}

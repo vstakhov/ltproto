@@ -176,13 +176,13 @@ unix_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const s
 ssize_t
 unix_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len)
 {
-	return read (sk->fd, buf, len);
+	return lt_read (sk->fd, buf, len);
 }
 
 ssize_t
 unix_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len)
 {
-	return write (sk->fd, buf, len);
+	return lt_write (sk->fd, buf, len);
 }
 
 int

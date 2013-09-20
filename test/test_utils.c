@@ -265,7 +265,8 @@ fastcrc (char *str, uint32_t len) {
  * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
  */
 pid_t
-fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum,
+fork_server (u_short port, u_int recv_buffer_size, u_int repeat_count,
+		void *mod, int corenum,
 		int strict_check, const char *mname)
 {
 	pid_t pid;
@@ -277,6 +278,7 @@ fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum,
 	struct sigaction sa;
 	uint32_t hash, test;
 	int r, remain, done;
+	uint64_t total = (uint64_t)recv_buffer_size * (uint64_t)repeat_count;
 	uint32_t (*hf)(char *in, uint32_t len);
 
 	if (has_sse_42 ()) {
@@ -347,9 +349,10 @@ do_client:
 				if (r > 0) {
 					remain -= r;
 					done += r;
+					total -= r;
 				}
-			} while (remain > 0 && r > 0);
-			if (r <= 0) {
+			} while (remain > 0 && r > 0 && total > 0 && !got_term);
+			if (r <= 0 || total == 0 || got_term) {
 				break;
 			}
 			if (strict_check) {

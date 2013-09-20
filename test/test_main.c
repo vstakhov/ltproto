@@ -69,7 +69,7 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	fflush (stdout);
 	port = 31119;
 	mod = ltproto_select_module (mname);
-	spid = fork_server (port, buflen, mod, server_core, strict_check, mname);
+	spid = fork_server (port, buflen, bytes / (uint64_t)buflen, mod, server_core, strict_check, mname);
 	assert (spid != -1);
 	wait_for_server ();
 	if (client_core != -1) {

@@ -169,4 +169,22 @@ int lt_setproctitle (const char *fmt, ...);
  */
 int lt_init_title (int argc, char *argv[], char *envp[]);
 
+/**
+ * Read from fd handling signals properly
+ * @param fd
+ * @param buf
+ * @param buflen
+ * @return
+ */
+ssize_t lt_read (int fd, void *buf, size_t buflen);
+
+/**
+ * Write to fd handling signals
+ * @param fd
+ * @param buf
+ * @param buflen
+ * @return
+ */
+ssize_t lt_write (int fd, const void *buf, size_t buflen);
+
 #endif /* UTIL_H_ */
