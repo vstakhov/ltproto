@@ -265,7 +265,8 @@ fastcrc (char *str, uint32_t len) {
  * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
  */
 pid_t
-fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum, int strict_check)
+fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum,
+		int strict_check, const char *mname)
 {
 	pid_t pid;
 	struct ltproto_socket *sock, *conn = NULL;
@@ -297,6 +298,7 @@ fork_server (u_short port, u_int recv_buffer_size, void *mod, int corenum, int s
 	}
 
 do_client:
+	lt_setproctitle ("%s[server], %s buf", mname, print_bytes (recv_buffer_size));
 	if (corenum != -1) {
 		bind_to_core (corenum);
 	}
@@ -377,7 +379,8 @@ do_client:
  * @return
  */
 int
-do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, const char *modname, int strict_check)
+do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod,
+		const char *modname, int strict_check)
 {
 	struct ltproto_socket *sock;
 	u_int i;
@@ -394,6 +397,7 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod, 
 		hf = murmur32_hash;
 	}
 
+	lt_setproctitle ("%s[client], %s buf, %u count", modname, print_bytes (send_buffer_size), repeat_count);
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons (port);
 	sin.sin_addr.s_addr = htonl (INADDR_LOOPBACK);

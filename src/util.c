@@ -24,7 +24,9 @@
 #include "config.h"
 #include "ltproto_internal.h"
 #include "util.h"
+#include <errno.h>
 #include <assert.h>
+#include <stdarg.h>
 #ifdef HAVE_OPENSSL
 #include <openssl/rand.h>
 #endif
@@ -35,6 +37,7 @@
 #ifdef HAVE_UMTX_OP
 #include <sys/umtx.h>
 #endif
+
 /**
  * Initialise pseudo random generator
  */
@@ -309,4 +312,122 @@ signal_memory (volatile int *ptr, int signalvalue, int newvalue)
 	}
 #endif
 	return 0;
+}
+
+
+static char                    *title_buffer = 0;
+static size_t                   title_buffer_size = 0;
+static char                    *title_progname, *title_progname_full;
+extern char *program_invocation_name, *program_invocation_short_name, **environ;
+
+int
+lt_setproctitle (const char *fmt, ...)
+{
+	if (!title_buffer || !title_buffer_size) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	memset (title_buffer, '\0', title_buffer_size);
+
+	ssize_t                         written;
+
+	if (fmt) {
+		ssize_t                         written2;
+		va_list                         ap;
+
+		written = snprintf (title_buffer, title_buffer_size, "%s: ", title_progname);
+		if (written < 0 || (size_t) written >= title_buffer_size)
+			return -1;
+
+		va_start (ap, fmt);
+		written2 = vsnprintf (title_buffer + written, title_buffer_size - written, fmt, ap);
+		va_end (ap);
+		if (written2 < 0 || (size_t) written2 >= title_buffer_size - written)
+			return -1;
+	}
+	else {
+		written = snprintf (title_buffer, title_buffer_size, "%s", title_progname);
+		if (written < 0 || (size_t) written >= title_buffer_size)
+			return -1;
+	}
+
+	written = strlen (title_buffer);
+	memset (title_buffer + written, '\0', title_buffer_size - written);
+
+	return 0;
+}
+
+/*
+  It has to be _init function, because __attribute__((constructor))
+  functions gets called without arguments.
+*/
+int
+lt_init_title (int argc, char *argv[], char *envp[])
+{
+#if defined(DARWIN) || defined(SOLARIS)
+	/* XXX: try to handle these OSes too */
+	return 0;
+#else
+	char                           *begin_of_buffer = 0, *end_of_buffer = 0;
+	int                            i;
+
+	for (i = 0; i < argc; ++i) {
+		if (!begin_of_buffer)
+			begin_of_buffer = argv[i];
+		if (!end_of_buffer || end_of_buffer + 1 == argv[i])
+			end_of_buffer = argv[i] + strlen (argv[i]);
+	}
+
+	for (i = 0; envp[i]; ++i) {
+		if (!begin_of_buffer)
+			begin_of_buffer = envp[i];
+		if (!end_of_buffer || end_of_buffer + 1 == envp[i])
+			end_of_buffer = envp[i] + strlen (envp[i]);
+	}
+
+	if (!end_of_buffer)
+		return 0;
+
+	char                           **new_environ = malloc ((i + 1) * sizeof (envp[0]));
+
+	if (!new_environ)
+		return 0;
+
+	for (i = 0; envp[i]; ++i) {
+		if (!(new_environ[i] = strdup (envp[i])))
+			goto cleanup_enomem;
+	}
+	new_environ[i] = 0;
+
+	if (program_invocation_name) {
+		title_progname_full = strdup (program_invocation_name);
+
+		if (!title_progname_full)
+			goto cleanup_enomem;
+
+		char                           *p = strrchr (title_progname_full, '/');
+
+		if (p)
+			title_progname = p + 1;
+		else
+			title_progname = title_progname_full;
+
+		program_invocation_name = title_progname_full;
+		program_invocation_short_name = title_progname;
+	}
+
+	environ = new_environ;
+	title_buffer = begin_of_buffer;
+	title_buffer_size = end_of_buffer - begin_of_buffer;
+
+	return 0;
+
+  cleanup_enomem:
+	for (--i; i >= 0; --i) {
+		free (new_environ[i]);
+	}
+	free (new_environ);
+	return 0;
+#endif
 }

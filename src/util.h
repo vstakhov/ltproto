@@ -153,5 +153,20 @@ int wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec);
  */
 int signal_memory (volatile int *ptr, int signalvalue, int newvalue);
 
+/**
+ * Set title of the current process
+ * @param fmt format
+ * @return
+ */
+int lt_setproctitle (const char *fmt, ...);
+
+/**
+ * Init environment for setproctitle call
+ * @param argc
+ * @param argv
+ * @param envp
+ * @return
+ */
+int lt_init_title (int argc, char *argv[], char *envp[]);
 
 #endif /* UTIL_H_ */

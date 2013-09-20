@@ -69,7 +69,7 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	fflush (stdout);
 	port = 31119;
 	mod = ltproto_select_module (mname);
-	spid = fork_server (port, buflen, mod, server_core, strict_check);
+	spid = fork_server (port, buflen, mod, server_core, strict_check, mname);
 	assert (spid != -1);
 	wait_for_server ();
 	if (client_core != -1) {
@@ -463,7 +463,7 @@ parse_tests_enabled (char *optline)
 }
 
 int
-main (int argc, char **argv)
+main (int argc, char **argv, char **envp)
 {
 	sigset_t sigmask;
 	struct sigaction sa;
@@ -474,6 +474,7 @@ main (int argc, char **argv)
 			strict_check = 0, test_latency = 0;
 	unsigned int i;
 
+	lt_init_title (argc, argv, envp);
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
 	memset (&sa, 0, sizeof (sa));

@@ -4,7 +4,14 @@
 if [ $# -ge 1 ] ; then
 	NPROC=$1
 else
-	NPROC=$(nproc)
+	if [ -x "/usr/bin/nproc" ] ; then
+		NPROC=$(nproc)
+	elif [ -x "/usr/bin/getconf" ] ; then
+		NPROC=$(getconf NPROCESSORS_ONLN)
+	else
+		echo "Cannot detect the number of cores"
+		exit 1
+	fi
 fi
 
 TYPES="null pipe unix shmem shmem_sleep"
