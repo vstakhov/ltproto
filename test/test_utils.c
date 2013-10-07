@@ -353,6 +353,7 @@ do_client:
 				}
 			} while (remain > 0 && r > 0 && total > 0 && !got_term);
 			if (r <= 0 || total == 0 || got_term) {
+				//fprintf (stderr, "server terminated, %llu left, r: %d\n", total, r);
 				break;
 			}
 			if (strict_check) {
@@ -363,7 +364,7 @@ do_client:
 		}
 
 		ltproto_close (conn);
-	} while (conn != NULL && !got_term);
+	} while (0);
 
 
 	ltproto_close (sock);
