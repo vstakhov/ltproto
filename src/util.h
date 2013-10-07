@@ -153,6 +153,7 @@ int wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec);
  */
 int signal_memory (volatile int *ptr, int signalvalue, int newvalue);
 
+#ifndef HAVE_SETPROCTITLE
 /**
  * Set title of the current process
  * @param fmt format
@@ -168,6 +169,10 @@ int lt_setproctitle (const char *fmt, ...);
  * @return
  */
 int lt_init_title (int argc, char *argv[], char *envp[]);
+#else
+#define lt_setproctitle setproctitle
+#define lt_init_title(argc, argv, envp) do {} while(0)
+#endif
 
 /**
  * Read from fd handling signals properly

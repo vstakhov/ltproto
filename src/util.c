@@ -267,7 +267,7 @@ wait_for_memory_passive (volatile int *ptr, int desired_value, volatile int *ptr
 int
 wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec)
 {
-	int val, cycles = 0;
+	int val;
 	struct timespec ts = {
 		.tv_sec = 0,
 		.tv_nsec = nsec
@@ -282,11 +282,6 @@ wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec)
 		/* Need to spin */
 		sched_yield ();
 		//(void)nanosleep (&ts, NULL);
-		cycles ++;
-		if (cycles > 100) {
-			errno = ETIMEDOUT;
-			return -1;
-		}
 	}
 
 	return 0;
@@ -314,15 +309,15 @@ signal_memory (volatile int *ptr, int signalvalue, int newvalue)
 	return 0;
 }
 
-
+#ifndef HAVE_SETPROCTITLE
 static char                    *title_buffer = 0;
 static size_t                   title_buffer_size = 0;
 static char                    *title_progname, *title_progname_full;
 extern char *program_invocation_name, *program_invocation_short_name, **environ;
-
 int
 lt_setproctitle (const char *fmt, ...)
 {
+
 	if (!title_buffer || !title_buffer_size) {
 		errno = ENOMEM;
 		return -1;
@@ -357,7 +352,6 @@ lt_setproctitle (const char *fmt, ...)
 
 	return 0;
 }
-
 /*
   It has to be _init function, because __attribute__((constructor))
   functions gets called without arguments.
@@ -431,6 +425,7 @@ lt_init_title (int argc, char *argv[], char *envp[])
 	return 0;
 #endif
 }
+#endif
 
 
 ssize_t
