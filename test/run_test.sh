@@ -61,17 +61,20 @@ plot    "$TEST_FILE" using 1:(rate(\$2)) title 'TCP' w linespoints, \
         "$TEST_FILE" using 1:(rate(\$4)) title 'Pipe' w linespoints, \
         "$TEST_FILE" using 1:(rate(\$5)) title 'Shmem-futex' w linespoints, \
         "$TEST_FILE" using 1:(rate(\$6)) title 'Shmem-sleep' w linespoints
+        "$TEST_FILE" using 1:(rate(\$7)) title 'Shmem-pipe' w linespoints
 set title "LTproto test binded to a same CPU core"
 plot    "$TEST_FILE.binded" using 1:(rate(\$2)) title 'TCP' w linespoints, \
         "$TEST_FILE.binded" using 1:(rate(\$3)) title 'Unix sockets' w linespoints, \
         "$TEST_FILE.binded" using 1:(rate(\$4)) title 'Pipe' w linespoints, \
         "$TEST_FILE.binded" using 1:(rate(\$5)) title 'Shmem-futex' w linespoints, \
         "$TEST_FILE.binded" using 1:(rate(\$6)) title 'Shmem-sleep' w linespoints
+        "$TEST_FILE.binded" using 1:(rate(\$7)) title 'Shmem-pipe' w linespoints
 set title "LTproto test with checksum verifying"
 plot    "$TEST_FILE.verified" using 1:(rate(\$2)) title 'TCP' w linespoints, \
         "$TEST_FILE.verified" using 1:(rate(\$3)) title 'Unix sockets' w linespoints, \
         "$TEST_FILE.verified" using 1:(rate(\$4)) title 'Pipe' w linespoints, \
         "$TEST_FILE.verified" using 1:(rate(\$5)) title 'Shmem-futex' w linespoints, \
         "$TEST_FILE.verified" using 1:(rate(\$6)) title 'Shmem-sleep' w linespoints
+        "$TEST_FILE.verified" using 1:(rate(\$7)) title 'Shmem-pipe' w linespoints
 EOF
 

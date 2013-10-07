@@ -11,7 +11,7 @@ for _bsize in $BSIZES ; do
                 for _rslots in $RING_SLOTS ; do
                         _seq=""
                         for _rbuf in $RING_BUFFERS ; do
-                                _seq="$_seq `LTPROTO_RING_SLOTS=$_rslots LTPROTO_RING_BUF=$_rbuf test/ltproto_test -t shmem -q -b $_bsize`"
+                                _seq="$_seq `LTPROTO_RING_SLOTS=$_rslots LTPROTO_RING_BUF=$_rbuf test/ltproto_test -t shmem_pipe -q -b $_bsize`"
                         done
                         echo $_seq >> $_rfile
                 done
