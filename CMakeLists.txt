@@ -239,6 +239,7 @@ CHECK_INCLUDE_FILES(sys/sendfile.h HAVE_SYS_SENDFILE_H)
 CHECK_INCLUDE_FILES(sched.h HAVE_SCHED_H)
 CHECK_INCLUDE_FILES(cpuid.h HAVE_CPUID_H)
 CHECK_INCLUDE_FILES("sys/param.h;sys/cpuset.h" HAVE_SYS_CPUSET_H)
+CHECK_FUNCTION_EXISTS(setproctitle HAVE_SETPROCTITLE)
 
 IF(HAVE_SCHED_H)
 	CHECK_SYMBOL_EXISTS(sched_setaffinity sched.h HAVE_SCHED_SETAFFINITY)
@@ -380,8 +381,9 @@ SET(MODULES_SRC src/null.c
 				src/unix_shmem.c
 				src/shmem.c
 				src/shmem_sleep.c
+				src/shmem_pipe.c
 				src/pipe.c)
-SET(MODULES_LIST null udp_shmem unix unix_shmem shmem shmem_sleep pipe)
+SET(MODULES_LIST null udp_shmem unix unix_shmem shmem shmem_sleep shmem_pipe pipe)
 
 SET(ALLOCATORS_SRC	src/alloc_linear.c 
 					src/alloc_system.c)

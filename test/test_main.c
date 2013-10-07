@@ -26,6 +26,8 @@
 #include "ltproto_internal.h"
 #include "test_utils.h"
 #include <assert.h>
+#include <sys/wait.h>
+
 
 static sig_atomic_t got_usr1 = 0;
 static int compact = 0;
@@ -62,6 +64,7 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	void *tdata, *mod;
 	uint64_t msec;
 	short port;
+	int res;
 
 	if (!compact) {
 		printf ("Test for module: %s\n", mname);
@@ -96,7 +99,7 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	printf ("Send buffer: 4Mb, Recv buffer: 4Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
 #endif
 	fflush (stdout);
-	kill (spid, SIGTERM);
+	waitpid (spid, &res, WNOHANG);
 }
 
 static int
@@ -238,7 +241,7 @@ syscalls_test (void)
 {
 	void *tdata;
 	u_char *map, *src, *dst;
-	uint64_t msec;
+	long long unsigned msec;
 	key_t key;
 	int fd, i, len, pages = 1024, psize = getpagesize (), shmid;
 	struct shmid_ds shm_ds;
@@ -249,67 +252,67 @@ syscalls_test (void)
 	fd = shm_open ("/perf_shm_open", O_RDWR | O_CREAT | O_EXCL, 00600);
 	assert (fd != -1);
 	msec = end_test_time (tdata);
-	printf ("Shm open call: %lu nanoseconds\n", msec);
+	printf ("Shm open call: %llu nanoseconds\n", msec);
 
 	start_test_time (&tdata);
 	assert (ftruncate (fd, len) != -1);
 	msec = end_test_time (tdata);
-	printf ("Shm ftruncate to 4Mb: %lu nanoseconds\n", msec);
+	printf ("Shm ftruncate to 4Mb: %llu nanoseconds\n", msec);
 
 	start_test_time (&tdata);
 	assert ((map = mmap (NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)) != MAP_FAILED);
 	msec = end_test_time (tdata);
-	printf ("Shm mmap 4Mb: %lu nanoseconds\n", msec);
+	printf ("Shm mmap 4Mb: %llu nanoseconds\n", msec);
 
 	start_test_time (&tdata);
 	assert (mprotect (map, len, PROT_READ) != -1);
 	msec = end_test_time (tdata);
-	printf ("Shm mprotect 4Mb: %lu nanoseconds\n", msec);
+	printf ("Shm mprotect 4Mb: %llu nanoseconds\n", msec);
 
 	start_test_time (&tdata);
 	for (i = 0; i < len; i += psize) {
 		assert (mprotect (map + i, psize, PROT_WRITE) != -1);
 	}
 	msec = end_test_time (tdata);
-	printf ("Shm %d mprotect 4Mb: %lu nanoseconds\n", pages, msec);
+	printf ("Shm %d mprotect 4Mb: %llu nanoseconds\n", pages, msec);
 
 	start_test_time (&tdata);
 	assert (mprotect (map, len, PROT_READ) != -1);
 	msec = end_test_time (tdata);
-	printf ("Shm mprotect 4Mb: %lu nanoseconds\n", msec);
+	printf ("Shm mprotect 4Mb: %llu nanoseconds\n", msec);
 
 	start_test_time (&tdata);
 	munmap (map, len);
 	msec = end_test_time (tdata);
-	printf ("Shm munmap 4Mb: %lu nanoseconds\n", msec);
+	printf ("Shm munmap 4Mb: %llu nanoseconds\n", msec);
 
 	close (fd);
 	start_test_time (&tdata);
 	shm_unlink ("/perf_shm_open");
 	msec = end_test_time (tdata);
-	printf ("Shm unlink: %lu nanoseconds\n", msec);
+	printf ("Shm unlink: %llu nanoseconds\n", msec);
 
 	// SysV memory
 	key = rand ();
 	start_test_time (&tdata);
 	assert ((shmid = shmget (key, len, IPC_CREAT | IPC_EXCL | 00640)) != -1);
 	msec = end_test_time (tdata);
-	printf ("shmget: %lu nanoseconds\n", msec);
+	printf ("shmget: %llu nanoseconds\n", msec);
 
 	start_test_time (&tdata);
 	assert ((map = shmat (shmid, NULL, 0)) != (void *)-1);
 	msec = end_test_time (tdata);
-	printf ("shmat: %lu nanoseconds\n", msec);
+	printf ("shmat: %llu nanoseconds\n", msec);
 
 	start_test_time (&tdata);
 	assert (shmdt (map) != -1);
 	msec = end_test_time (tdata);
-	printf ("shmdt: %lu nanoseconds\n", msec);
+	printf ("shmdt: %llu nanoseconds\n", msec);
 
 	start_test_time (&tdata);
 	assert (shmctl (shmid, IPC_RMID, &shm_ds) != -1);
 	msec = end_test_time (tdata);
-	printf ("shmctl: %lu nanoseconds\n", msec);
+	printf ("shmctl: %llu nanoseconds\n", msec);
 
 	src = malloc (1024 * 1024);
 	dst = malloc (1024 * 1024);
@@ -317,7 +320,7 @@ syscalls_test (void)
 	start_test_time (&tdata);
 	memcpy (src, dst, 1024 * 1024);
 	msec = end_test_time (tdata);
-	printf ("memcpy 1mb: %lu nanoseconds\n", msec);
+	printf ("memcpy 1mb: %llu nanoseconds\n", msec);
 
 	free (src);
 	free (dst);
@@ -329,7 +332,7 @@ syscalls_test (void)
 		memcpy (src + i * 1024, dst + i * 1024, 1024);
 	}
 	msec = end_test_time (tdata);
-	printf ("1024 memcpy 1kb: %lu nanoseconds\n", msec);
+	printf ("1024 memcpy 1kb: %llu nanoseconds\n", msec);
 
 	free (src);
 	free (dst);
@@ -410,6 +413,11 @@ static struct {
 		{
 				"shmem_sleep",
 				"Shared memory channel, synced by sleep",
+				1
+		},
+		{
+				"shmem_pipe",
+				"Shared memory channel, synced by pipes",
 				1
 		}
 };
