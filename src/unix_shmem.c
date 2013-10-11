@@ -84,13 +84,14 @@ struct ltproto_socket* unix_shmem_accept_func (struct lt_module_ctx *ctx, struct
 int unix_shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
 ssize_t unix_shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
 ssize_t unix_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
-int unix_shmem_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
+int unix_shmem_get_wait_fd (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int unix_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int unix_shmem_destroy_func (struct lt_module_ctx *ctx);
 
 module_t unix_shmem_module = {
 	.name = "unix_shmem",
 	.priority = 2,
+	.pollable = true,
 	.module_init_func = unix_shmem_init_func,
 	.module_socket_func = unix_shmem_socket_func,
 	.module_setopts_func = unix_shmem_setopts_func,
@@ -100,7 +101,7 @@ module_t unix_shmem_module = {
 	.module_connect_func = unix_shmem_connect_func,
 	.module_read_func = unix_shmem_read_func,
 	.module_write_func = unix_shmem_write_func,
-	.module_select_func = unix_shmem_select_func,
+	.module_get_wait_fd = unix_shmem_get_wait_fd,
 	.module_close_func = unix_shmem_close_func,
 	.module_destroy_func = unix_shmem_destroy_func
 };
@@ -392,20 +393,11 @@ unix_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, con
 }
 
 int
-unix_shmem_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv)
+unix_shmem_get_wait_fd (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
-	struct pollfd pfd;
-	int msec = -1;
 	struct ltproto_socket_unix *usk = (struct ltproto_socket_unix *)sk;
 
-	pfd.events = what;
-	pfd.fd = usk->fd;
-
-	if (tv != NULL) {
-		msec = tv_to_msec (tv);
-	}
-
-	return poll (&pfd, 1, msec);
+	return usk->fd;
 }
 
 int

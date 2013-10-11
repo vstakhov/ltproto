@@ -75,6 +75,7 @@ struct lt_alloc_tag;
 typedef struct module_s {
     char *name;
     int priority;
+    bool pollable;
     int (*module_init_func)(struct lt_module_ctx **ctx);
     struct ltproto_socket * (*module_socket_func)(struct lt_module_ctx *ctx);
     int (*module_setopts_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, int optname, int optvalue);
@@ -85,7 +86,7 @@ typedef struct module_s {
     ssize_t (*module_read_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
     ssize_t (*module_write_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
     /** TODO: add iovector functions as well */
-    int (*module_select_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
+    int (*module_get_wait_fd)(struct lt_module_ctx *ctx, struct ltproto_socket *sk);
     int (*module_close_func)(struct lt_module_ctx *ctx, struct ltproto_socket *sk);
     int (*module_destroy_func)(struct lt_module_ctx *ctx);
 } module_t;

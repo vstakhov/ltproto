@@ -45,13 +45,13 @@ struct ltproto_socket* shmem_sleep_accept_func (struct lt_module_ctx *ctx, struc
 int shmem_sleep_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
 ssize_t shmem_sleep_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
 ssize_t shmem_sleep_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
-int shmem_sleep_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
 int shmem_sleep_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int shmem_sleep_destroy_func (struct lt_module_ctx *ctx);
 
 module_t shmem_sleep_module = {
 		.name = "shmem_sleep",
 		.priority = 10,
+		.pollable = false,
 		.module_init_func = shmem_sleep_init_func,
 		.module_socket_func = shmem_sleep_socket_func,
 		.module_setopts_func = shmem_sleep_setopts_func,
@@ -61,7 +61,6 @@ module_t shmem_sleep_module = {
 		.module_connect_func = shmem_sleep_connect_func,
 		.module_read_func = shmem_sleep_read_func,
 		.module_write_func = shmem_sleep_write_func,
-		.module_select_func = shmem_sleep_select_func,
 		.module_close_func = shmem_sleep_close_func,
 		.module_destroy_func = shmem_sleep_destroy_func
 };
@@ -344,22 +343,6 @@ shmem_sleep_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, co
 		}
 	}
 	return -1;
-}
-
-int
-shmem_sleep_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv)
-{
-	struct pollfd pfd;
-	int msec = -1;
-
-	pfd.events = what;
-	pfd.fd = sk->fd;
-
-	if (tv != NULL) {
-		msec = tv_to_msec (tv);
-	}
-
-	return poll (&pfd, 1, msec);
 }
 
 int

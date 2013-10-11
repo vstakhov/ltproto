@@ -42,13 +42,14 @@ struct ltproto_socket* null_accept_func (struct lt_module_ctx *ctx, struct ltpro
 int null_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
 ssize_t null_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
 ssize_t null_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
-int null_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
+int null_get_wait_fd (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int null_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int null_destroy_func (struct lt_module_ctx *ctx);
 
 module_t null_module = {
 	.name = "null",
 	.priority = 0,
+	.pollable = true,
 	.module_init_func = null_init_func,
 	.module_socket_func = null_socket_func,
 	.module_setopts_func = null_setopts_func,
@@ -58,7 +59,7 @@ module_t null_module = {
 	.module_connect_func = null_connect_func,
 	.module_read_func = null_read_func,
 	.module_write_func = null_write_func,
-	.module_select_func = null_select_func,
+	.module_get_wait_fd = null_get_wait_fd,
 	.module_close_func = null_close_func,
 	.module_destroy_func = null_destroy_func
 };
@@ -149,19 +150,9 @@ null_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const voi
 }
 
 int
-null_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv)
+null_get_wait_fd (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
-	struct pollfd pfd;
-	int msec = -1;
-
-	pfd.events = what;
-	pfd.fd = sk->fd;
-
-	if (tv != NULL) {
-		msec = tv_to_msec (tv);
-	}
-
-	return poll (&pfd, 1, msec);
+	return sk->tcp_fd;
 }
 
 int

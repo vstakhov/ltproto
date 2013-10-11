@@ -155,13 +155,14 @@ struct ltproto_socket* udp_shmem_accept_func (struct lt_module_ctx *ctx, struct 
 int udp_shmem_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
 ssize_t udp_shmem_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
 ssize_t udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
-int udp_shmem_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
+int udp_shmem_get_wait_fd (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int udp_shmem_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int udp_shmem_destroy_func (struct lt_module_ctx *ctx);
 
 module_t udp_shmem_module = {
 	.name = "udp_shmem",
 	.priority = 2,
+	.pollable = true,
 	.module_init_func = udp_shmem_init_func,
 	.module_socket_func = udp_shmem_socket_func,
 	.module_setopts_func = udp_shmem_setopts_func,
@@ -171,7 +172,7 @@ module_t udp_shmem_module = {
 	.module_connect_func = udp_shmem_connect_func,
 	.module_read_func = udp_shmem_read_func,
 	.module_write_func = udp_shmem_write_func,
-	.module_select_func = udp_shmem_select_func,
+	.module_get_wait_fd = udp_shmem_get_wait_fd,
 	.module_close_func = udp_shmem_close_func,
 	.module_destroy_func = udp_shmem_destroy_func
 };
@@ -703,20 +704,11 @@ udp_shmem_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, cons
 }
 
 int
-udp_shmem_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv)
+udp_shmem_get_wait_fd (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
-	struct pollfd pfd;
-	int msec = -1;
 	struct ltproto_socket_udp *usk = (struct ltproto_socket_udp *)sk;
 
-	pfd.events = what;
-	pfd.fd = usk->fd;
-
-	if (tv != NULL) {
-		msec = tv_to_msec (tv);
-	}
-
-	return poll (&pfd, 1, msec);
+	return usk->fd;
 }
 
 int

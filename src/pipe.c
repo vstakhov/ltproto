@@ -42,13 +42,14 @@ struct ltproto_socket* pipe_accept_func (struct lt_module_ctx *ctx, struct ltpro
 int pipe_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
 ssize_t pipe_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
 ssize_t pipe_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
-int pipe_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
+int pipe_get_wait_fd (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int pipe_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int pipe_destroy_func (struct lt_module_ctx *ctx);
 
 module_t pipe_module = {
 	.name = "pipe",
 	.priority = 0,
+	.pollable = true,
 	.module_init_func = pipe_init_func,
 	.module_socket_func = pipe_socket_func,
 	.module_setopts_func = pipe_setopts_func,
@@ -58,7 +59,7 @@ module_t pipe_module = {
 	.module_connect_func = pipe_connect_func,
 	.module_read_func = pipe_read_func,
 	.module_write_func = pipe_write_func,
-	.module_select_func = pipe_select_func,
+	.module_get_wait_fd = pipe_get_wait_fd,
 	.module_close_func = pipe_close_func,
 	.module_destroy_func = pipe_destroy_func
 };
@@ -234,19 +235,9 @@ pipe_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const voi
 }
 
 int
-pipe_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv)
+pipe_get_wait_fd (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
-	struct pollfd pfd;
-	int msec = -1;
-
-	pfd.events = what;
-	pfd.fd = sk->fd;
-
-	if (tv != NULL) {
-		msec = tv_to_msec (tv);
-	}
-
-	return poll (&pfd, 1, msec);
+	return sk->fd;
 }
 
 int

@@ -25,6 +25,9 @@
 #include "ltproto.h"
 #include "ltproto_internal.h"
 #include <assert.h>
+#ifdef HAVE_NUMA_H
+# include <numa.h>
+#endif
 
 /**
  * @file alloc_system.c

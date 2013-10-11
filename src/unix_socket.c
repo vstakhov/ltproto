@@ -42,13 +42,14 @@ struct ltproto_socket* unix_accept_func (struct lt_module_ctx *ctx, struct ltpro
 int unix_connect_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const struct sockaddr *addr, socklen_t addrlen);
 ssize_t unix_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void *buf, size_t len);
 ssize_t unix_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const void *buf, size_t len);
-int unix_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv);
+int unix_get_wait_fd (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int unix_close_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk);
 int unix_destroy_func (struct lt_module_ctx *ctx);
 
 module_t unix_module = {
 	.name = "unix",
 	.priority = 0,
+	.pollable = true,
 	.module_init_func = unix_init_func,
 	.module_socket_func = unix_socket_func,
 	.module_setopts_func = unix_setopts_func,
@@ -58,7 +59,7 @@ module_t unix_module = {
 	.module_connect_func = unix_connect_func,
 	.module_read_func = unix_read_func,
 	.module_write_func = unix_write_func,
-	.module_select_func = unix_select_func,
+	.module_get_wait_fd = unix_get_wait_fd,
 	.module_close_func = unix_close_func,
 	.module_destroy_func = unix_destroy_func
 };
@@ -186,19 +187,9 @@ unix_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, const voi
 }
 
 int
-unix_select_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, short what, const struct timeval *tv)
+unix_get_wait_fd (struct lt_module_ctx *ctx, struct ltproto_socket *sk)
 {
-	struct pollfd pfd;
-	int msec = -1;
-
-	pfd.events = what;
-	pfd.fd = sk->fd;
-
-	if (tv != NULL) {
-		msec = tv_to_msec (tv);
-	}
-
-	return poll (&pfd, 1, msec);
+	return sk->fd;
 }
 
 int

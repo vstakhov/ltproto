@@ -358,12 +358,14 @@ ltproto_select (struct ltproto_socket *sk, short what, const struct timeval *tv)
 	struct pollfd pfd;
 
 	if (sk != NULL) {
-		if ((r = sk->mod->mod->module_select_func (sk->mod->ctx, sk, what, tv)) <= 0) {
-			pfd.events = what;
-			pfd.fd = sk->tcp_fd;
-			pfd.revents = 0;
-			return poll (&pfd, 1, tv_to_msec(tv));
+		if (!sk->mod->mod->pollable ||
+				(r = sk->mod->mod->module_get_wait_fd (sk->mod->ctx, sk)) == -1) {
+			r = sk->tcp_fd;
 		}
+		pfd.events = what;
+		pfd.fd = r;
+		pfd.revents = 0;
+		return poll (&pfd, 1, tv_to_msec(tv));
 	}
 
 	errno = -EBADF;
