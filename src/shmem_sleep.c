@@ -75,6 +75,7 @@ struct lt_net_ring_slot {
 	unsigned int len;
 	unsigned int flags;
 #define LT_SLOT_FLAG_READY 0x1
+	char __pad[CACHELINE - sizeof(unsigned int) * 2];
 };
 
 struct lt_net_ring {

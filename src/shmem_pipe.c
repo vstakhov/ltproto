@@ -104,6 +104,7 @@ struct lt_net_ring_slot {
 #define LT_SLOT_FLAG_WAIT_READ 0x2
 #define LT_SLOT_FLAG_WAIT_WRITE 0x4
 #define LT_SLOT_FLAG_WAIT (LT_SLOT_FLAG_WAIT_READ | LT_SLOT_FLAG_WAIT_WRITE)
+	char __pad[CACHELINE - sizeof(unsigned int) * 2];
 };
 
 struct lt_net_ring {

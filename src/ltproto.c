@@ -26,6 +26,9 @@
 #include "ltproto.h"
 #include "ltproto_internal.h"
 #include <assert.h>
+#ifdef HAVE_NUMA_H
+# include <numa.h>
+#endif
 
 static struct ltproto_ctx *lib_ctx = NULL;
 
@@ -43,6 +46,11 @@ ltproto_init (void)
 	assert (lib_ctx != NULL);
 
 	lib_ctx->prng = init_prng ();
+
+	/* Set strict policy */
+#ifdef HAVE_NUMA_H
+	numa_set_strict (1);
+#endif
 
 #ifndef THREAD_UNSAFE
 	pthread_rwlock_init (&lib_ctx->sock_lock, NULL);

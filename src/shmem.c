@@ -92,6 +92,7 @@ struct lt_net_ring {
 	size_t buf_size;
 
 	struct lt_net_ring_slot slot[0];
+	char __pad[CACHELINE - sizeof(unsigned int) * 2];
 };
 
 #define LT_RING_BUF(ring, index)                         \

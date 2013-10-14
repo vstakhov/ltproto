@@ -169,4 +169,8 @@ struct ltproto_ctx {
 #endif
 };
 
+/* Default length of cache line for i386 cpu */
+/* XXX: should not be hardcoded */
+#define CACHELINE 64
+
 #endif /* LTPROTO_INTERNAL_H_ */
