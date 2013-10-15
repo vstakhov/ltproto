@@ -27,6 +27,7 @@
 #include <assert.h>
 #ifdef HAVE_NUMA_H
 # include <numa.h>
+# include <numaif.h>
 #endif
 
 /**
@@ -83,6 +84,7 @@ struct lt_linear_allocator_ctx {
 	int numa_node;
 	struct ltproto_ctx *lib_ctx;		// Parent ctx
 	int use_sysv;						// Use sysV shared memory
+	int debug_numa;
 	TAILQ_HEAD (ar_head, alloc_arena) arenas;	// Shared arenas
 	struct {
 		struct alloc_chunk *chunk;
@@ -105,6 +107,60 @@ allocator_t linear_allocator = {
 	.allocator_destroy_func = linear_destroy_func,
 	.allocator_set_numa_node = linear_set_numa_func
 };
+
+static char *policy_names[] = { "default", "preferred", "bind", "interleave" };
+
+static void printmask (char *name, struct bitmask *mask)
+{
+	int i;
+
+	printf ("%s: ", name);
+	for (i = 0; i <= mask->size; i++)
+		if (numa_bitmask_isbitset (mask, i))
+			printf ("%d ", i);
+	putchar ('\n');
+}
+
+static void dumppol (unsigned long long start, unsigned long long end, int pol,
+		struct bitmask *mask)
+{
+	if (pol == MPOL_DEFAULT)
+		return;
+	printf ("%016Lx-%016Lx: %s ", start, end, policy_names[pol]);
+	printmask ("", mask);
+}
+
+/* Dump policies in a shared memory segment. */
+static void dump_shm (unsigned char *shmptr, unsigned int shm_pagesize,
+		size_t shmlen)
+{
+	struct bitmask *nodes, *prevnodes;
+	int prevpol = -1, pol;
+	unsigned long long c, start;
+
+	start = 0;
+	if (shmlen == 0) {
+		printf ("nothing to dump\n");
+		return;
+	}
+
+	nodes = numa_allocate_nodemask ();
+	prevnodes = numa_allocate_nodemask ();
+
+	for (c = 0; c < shmlen; c += shm_pagesize) {
+		if (get_mempolicy (&pol, nodes->maskp, nodes->size, c + shmptr,
+				MPOL_F_ADDR) < 0)
+			return;
+		if (pol == prevpol)
+			continue;
+		if (prevpol != -1)
+			dumppol (start, c, prevpol, prevnodes);
+		prevnodes = nodes;
+		prevpol = pol;
+		start = c;
+	}
+	dumppol (start, c, prevpol, prevnodes);
+}
 
 
 /**
@@ -148,6 +204,9 @@ create_shared_arena_posix (struct lt_linear_allocator_ctx *ctx, size_t size)
 #ifdef HAVE_NUMA_H
 	if (ctx->numa_node != -1) {
 		numa_tonode_memory (map, size, ctx->numa_node);
+		if (ctx->debug_numa) {
+			dump_shm (map, getpagesize (), size);
+		}
 	}
 #endif
 	close (fd);
@@ -473,12 +532,11 @@ linear_init_func (struct lt_allocator_ctx **ctx, uint64_t init_seq)
 		new->use_sysv = 1;
 	}
 
-	TAILQ_INIT (&new->arenas);
-
-	if (create_shared_arena (new, getpagesize () * default_arena_pages) == -1) {
-		/* XXX: handle freeing of objects */
-		return -1;
+	if (getenv ("LTPROTO_DEBUG_NUMA") != NULL) {
+		new->debug_numa = 1;
 	}
+
+	TAILQ_INIT (&new->arenas);
 
 	*ctx = (struct lt_allocator_ctx *)new;
 
@@ -502,7 +560,7 @@ linear_alloc_func (struct lt_allocator_ctx *ctx, size_t size, struct lt_alloc_ta
 	}
 
 	/* Try to alloc new zone */
-	if (create_shared_arena (real_ctx, size + getpagesize () * default_arena_pages) == -1) {
+	if (create_shared_arena (real_ctx, MAX (size, getpagesize () * default_arena_pages)) == -1) {
 		return NULL;
 	}
 
