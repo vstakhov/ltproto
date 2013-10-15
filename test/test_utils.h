@@ -53,7 +53,7 @@ double round_test_time (uint64_t nanoseconds);
  * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
  */
 pid_t fork_server (u_short port, u_int recv_buffer_size, u_int repeat_count,
-		void *mod, int corenum, int strict_check,
+		void *mod, int corenum, int numa_node, int strict_check,
 		const char *mname);
 
 /**
@@ -73,7 +73,7 @@ int do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *m
  * @param recv_buffer_size size of receive buffer
  * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
  */
-pid_t fork_server_latency (u_short port, void *mod, int corenum);
+pid_t fork_server_latency (u_short port, void *mod, int corenum, int numa_node);
 
 /**
  * Perform client test
@@ -115,6 +115,6 @@ void gperf_profiler_stop (void);
  * Bind this process to a specific core
  * @param corenum number of core
  */
-void bind_to_core (int corenum);
+void bind_to_core (int corenum, int numa_node);
 
 #endif /* TEST_UTILS_H_ */

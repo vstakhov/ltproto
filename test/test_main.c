@@ -58,7 +58,7 @@ wait_for_server (void)
 
 static void
 perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t bytes,
-		int server_core, int client_core, int strict_check)
+		int server_core, int client_core, int numa_node, int strict_check)
 {
 	pid_t spid;
 	void *tdata, *mod;
@@ -72,12 +72,10 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	fflush (stdout);
 	port = 31119;
 	mod = ltproto_select_module (mname);
-	spid = fork_server (port, buflen, bytes / (uint64_t)buflen, mod, server_core, strict_check, mname);
+	spid = fork_server (port, buflen, bytes / (uint64_t)buflen, mod, server_core, numa_node, strict_check, mname);
 	assert (spid != -1);
 	wait_for_server ();
-	if (client_core != -1) {
-		bind_to_core (client_core);
-	}
+	bind_to_core (client_core, numa_node);
 	start_test_time (&tdata);
 	assert (do_client (port, buflen, bytes / (uint64_t)buflen, mod, mname, strict_check) != -1);
 	msec = end_test_time (tdata);
@@ -112,13 +110,13 @@ uint64_cmp (const void *a, const void *b)
 
 static void
 perform_module_test_latency (const char *mname,
-		int server_core, int client_core)
+		int server_core, int client_core, int numa_node)
 {
 	pid_t spid;
 	void *tdata, *mod;
 	uint64_t *msec;
 	short port;
-	int i;
+	int i, res;
 	const int cycles = 20;
 
 	if (!compact) {
@@ -130,15 +128,14 @@ perform_module_test_latency (const char *mname,
 	for (i = 0; i < cycles; i ++) {
 		port = 31119;
 		mod = ltproto_select_module (mname);
-		spid = fork_server_latency (port, mod, server_core);
+		spid = fork_server_latency (port, mod, server_core, numa_node);
 		assert (spid != -1);
 		wait_for_server ();
-		if (client_core != -1) {
-			bind_to_core (client_core);
-		}
+		bind_to_core (client_core, numa_node);
 		start_test_time (&tdata);
 		assert (do_client_latency (port, mod, mname, &msec[i]) != -1);
 		kill (spid, SIGTERM);
+		waitpid (spid, &res, WNOHANG);
 	}
 
 	qsort (msec, cycles, sizeof (msec[0]), uint64_cmp);
@@ -341,7 +338,7 @@ syscalls_test (void)
 static void
 usage (void)
 {
-	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-t <tests>] [-c same|different] [-fqhvl]\n");
+	printf ("Usage: ltproto_test [-b <buffer_size>] [-s <bytes_count>] [-t <tests>] [-c core_client,core_server] [-n numa_node] [-fqhvl]\n");
 	exit (EXIT_FAILURE);
 }
 
@@ -478,7 +475,7 @@ main (int argc, char **argv, char **envp)
 	unsigned long buflen = 1024 * 1024;
 	uint64_t bytes = 8589934592ULL;
 	char c, *end;
-	int client_core = -1, server_core = -1, full_test = 0,
+	int client_core = -1, server_core = -1, numa_node = -1, full_test = 0,
 			strict_check = 0, test_latency = 0;
 	unsigned int i;
 
@@ -490,7 +487,7 @@ main (int argc, char **argv, char **envp)
 	sa.sa_handler = usr1_handler;
 	sigaction (SIGUSR1, &sa, NULL);
 
-	while ((c = getopt (argc, argv, "qfc:b:t:s:hvl")) != -1) {
+	while ((c = getopt (argc, argv, "qfc:b:t:s:hvln:")) != -1) {
 		switch(c) {
 		case 'b':
 			if (optarg) {
@@ -543,6 +540,14 @@ main (int argc, char **argv, char **envp)
 				usage ();
 			}
 			break;
+		case 'n':
+			if (optarg) {
+				numa_node = strtoul (optarg, NULL, 10);
+			}
+			else {
+				usage ();
+			}
+			break;
 		case 'q':
 			compact = 1;
 			break;
@@ -584,11 +589,11 @@ main (int argc, char **argv, char **envp)
 	for (i = 0; i < sizeof (tests_enabled) / sizeof (tests_enabled[0]); i ++) {
 		if (tests_enabled[i].enabled) {
 			if (test_latency) {
-				perform_module_test_latency (tests_enabled[i].test_name, server_core, client_core);
+				perform_module_test_latency (tests_enabled[i].test_name, server_core, client_core, numa_node);
 			}
 			else {
 				perform_module_test_simple (tests_enabled[i].test_name, buflen,
-					bytes, server_core, client_core, strict_check);
+					bytes, server_core, client_core, numa_node, strict_check);
 			}
 		}
 	}

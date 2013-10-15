@@ -266,7 +266,7 @@ fastcrc (char *str, uint32_t len) {
  */
 pid_t
 fork_server (u_short port, u_int recv_buffer_size, u_int repeat_count,
-		void *mod, int corenum,
+		void *mod, int corenum, int numa_node,
 		int strict_check, const char *mname)
 {
 	pid_t pid;
@@ -301,9 +301,7 @@ fork_server (u_short port, u_int recv_buffer_size, u_int repeat_count,
 
 do_client:
 	lt_setproctitle ("%s[server], %s buf", mname, print_bytes (recv_buffer_size));
-	if (corenum != -1) {
-		bind_to_core (corenum);
-	}
+	bind_to_core (corenum, numa_node);
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
 	memset (&sa, 0, sizeof (sa));
@@ -454,7 +452,7 @@ err:
  * @return 0 in case of success, -1 in case of error (and doesn't return for server process)
  */
 pid_t
-fork_server_latency (u_short port, void *mod, int corenum)
+fork_server_latency (u_short port, void *mod, int corenum, int numa_node)
 {
 	pid_t pid;
 	struct ltproto_socket *sock, *conn = NULL;
@@ -476,9 +474,7 @@ fork_server_latency (u_short port, void *mod, int corenum)
 	}
 
 do_client:
-	if (corenum != -1) {
-		bind_to_core (corenum);
-	}
+	bind_to_core (corenum, numa_node);
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
 	memset (&sa, 0, sizeof (sa));
@@ -663,26 +659,37 @@ gperf_profiler_stop (void)
  * @param corenum number of core
  */
 void
-bind_to_core (int corenum)
+bind_to_core (int corenum, int numa_node)
 {
 #ifdef HAVE_SCHED_SETAFFINITY
 	/* Bind to a single core */
 	cpu_set_t mask;
-	CPU_ZERO (&mask);
-	CPU_SET (corenum, &mask);
-	sched_setaffinity (0, sizeof(cpu_set_t), &mask);
+	if (corenum != -1) {
+		CPU_ZERO (&mask);
+		CPU_SET (corenum, &mask);
+		sched_setaffinity (0, sizeof(cpu_set_t), &mask);
+	}
 #elif defined(HAVE_CPUSET_SETAFFINITY)
 	cpuset_t mask;
-	CPU_ZERO (&mask);
-	CPU_SET (corenum, &mask);
-	cpuset_setaffinity (CPU_LEVEL_WHICH, CPU_WHICH_PID, -1, sizeof (mask), &mask);
+	if (corenum != -1) {
+		CPU_ZERO (&mask);
+		CPU_SET (corenum, &mask);
+		cpuset_setaffinity (CPU_LEVEL_WHICH, CPU_WHICH_PID, -1, sizeof (mask), &mask);
+	}
 #endif
 #ifdef HAVE_NUMA_H
 	int node;
 	if (numa_available () != -1) {
-		node = numa_node_of_cpu (corenum);
-		numa_set_preferred (node);
-		ltproto_bind_numa (node);
+		if (numa_node == -1 && corenum != -1) {
+			node = numa_node_of_cpu (corenum);
+		}
+		else {
+			node = numa_node;
+		}
+		if (node != -1) {
+			numa_set_preferred (node);
+			ltproto_bind_numa (node);
+		}
 	}
 #endif
 }
