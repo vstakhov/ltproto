@@ -108,6 +108,7 @@ allocator_t linear_allocator = {
 	.allocator_set_numa_node = linear_set_numa_func
 };
 
+#ifdef HAVE_NUMA_H
 static char *policy_names[] = { "default", "preferred", "bind", "interleave" };
 
 static void printmask (char *name, struct bitmask *mask)
@@ -161,7 +162,7 @@ static void dump_shm (unsigned char *shmptr, unsigned int shm_pagesize,
 	}
 	dumppol (start, c, prevpol, prevnodes);
 }
-
+#endif
 
 /**
  * Create and attach shared memory arena using posix shmem
