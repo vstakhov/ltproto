@@ -790,7 +790,7 @@ fixed_numa_node_of_cpu (int cpu)
 	struct bitmask *bmp;
 	int ncpus, nnodes, node, ret;
 
-	ncpus = sizeof (cpu_set_t) * CHAR_BIT;
+	ncpus = 4096;
 	if (cpu > ncpus) {
 		errno = EINVAL;
 		return -1;
