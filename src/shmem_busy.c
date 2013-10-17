@@ -76,12 +76,6 @@ struct lt_net_ring_slot {
 };
 
 struct lt_net_ring {
-	unsigned int num_slots;
-	unsigned int ref;
-
-	size_t buf_offset;
-	size_t buf_size;
-
 	/* Read pos */
 	volatile uint32_t head;
 	volatile char __pad1[CACHELINE - sizeof(uint32_t)];
@@ -89,6 +83,12 @@ struct lt_net_ring {
 	/* Write pos */
 	volatile uint32_t tail;
 	volatile char __pad2[CACHELINE - sizeof(uint32_t)];
+
+	unsigned int num_slots;
+	unsigned int ref;
+
+	size_t buf_offset;
+	size_t buf_size;
 
 	struct lt_net_ring_slot slot[0];
 };
