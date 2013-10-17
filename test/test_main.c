@@ -416,6 +416,11 @@ static struct {
 				"shmem_pipe",
 				"Shared memory channel, synced by pipes",
 				1
+		},
+		{
+				"shmem_busy",
+				"Shared memory channel, synced by busy wait",
+				1
 		}
 };
 

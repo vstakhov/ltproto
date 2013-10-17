@@ -383,8 +383,9 @@ SET(MODULES_SRC src/null.c
 				src/shmem.c
 				src/shmem_sleep.c
 				src/shmem_pipe.c
+				src/shmem_busy.c
 				src/pipe.c)
-SET(MODULES_LIST null udp_shmem unix unix_shmem shmem shmem_sleep shmem_pipe pipe)
+SET(MODULES_LIST null udp_shmem unix unix_shmem shmem shmem_sleep shmem_pipe shmem_busy pipe)
 
 SET(ALLOCATORS_SRC	src/alloc_linear.c 
 					src/alloc_system.c)
