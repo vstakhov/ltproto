@@ -112,7 +112,7 @@ static void
 perform_module_test_latency (const char *mname,
 		int server_core, int client_core, int numa_node)
 {
-	pid_t spid;
+	pid_t spid, cpid;
 	void *tdata, *mod;
 	uint64_t *msec;
 	short port;
@@ -124,18 +124,26 @@ perform_module_test_latency (const char *mname,
 	}
 	fflush (stdout);
 
-	msec = calloc (cycles, sizeof (msec[0]));
+	msec = mmap (NULL, cycles * sizeof (msec[0]), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	for (i = 0; i < cycles; i ++) {
 		port = 31119;
 		mod = ltproto_select_module (mname);
 		spid = fork_server_latency (port, mod, server_core, numa_node);
 		assert (spid != -1);
 		wait_for_server ();
-		bind_to_core (client_core, numa_node);
-		start_test_time (&tdata);
-		assert (do_client_latency (port, mod, mname, &msec[i]) != -1);
-		kill (spid, SIGTERM);
-		waitpid (spid, &res, WNOHANG);
+		cpid = fork ();
+		if (cpid == 0) {
+			bind_to_core (client_core, numa_node);
+			start_test_time (&tdata);
+			assert (do_client_latency (port, mod, mname, &msec[i]) != -1);
+			kill (spid, SIGTERM);
+			ltproto_destroy ();
+			exit (EXIT_SUCCESS);
+		}
+		else {
+			waitpid (spid, &res, 0);
+			waitpid (cpid, &res, 0);
+		}
 	}
 
 	qsort (msec, cycles, sizeof (msec[0]), uint64_cmp);
@@ -148,6 +156,7 @@ perform_module_test_latency (const char *mname,
 	}
 
 	fflush (stdout);
+	munmap (msec, cycles * sizeof (msec[0]));
 
 }
 
