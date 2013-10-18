@@ -258,6 +258,8 @@ wait_for_memory_passive (volatile int *ptr, int desired_value, volatile int *ptr
 	return 0;
 }
 
+#define BUSY_CYCLES 64
+
 /**
 * Wait for memory at pointer to get desired value, not changing state using sleep
  * @param ptr pointer to wait
@@ -267,18 +269,21 @@ wait_for_memory_passive (volatile int *ptr, int desired_value, volatile int *ptr
 int
 wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec)
 {
-	int val;
+	int val, cycles = 0;
 	struct timespec ts = {
 		.tv_sec = 0,
 		.tv_nsec = nsec
 	};
 
 	for (;;) {
-		val = lt_int_atomic_get (ptr);
+		while (cycles++ < BUSY_CYCLES) {
+			val = lt_int_atomic_get (ptr);
 
-		if (val == desired_value) {
-			break;
+			if (val == desired_value) {
+				return 0;
+			}
 		}
+		cycles = 0;
 		/* Need to spin */
 		sched_yield ();
 		//(void)nanosleep (&ts, NULL);
