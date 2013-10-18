@@ -65,8 +65,9 @@ module_t shmem_busy_module = {
 		.module_destroy_func = shmem_busy_destroy_func
 };
 
-#define LT_DEFAULT_SLOTS 256
-#define LT_DEFAULT_BUF 4096
+#define LT_DEFAULT_SLOTS 512
+#define LT_DEFAULT_BUF 1024
+#define MAX_BUSY_LOOP 1024
 
 static int lt_ring_slots = LT_DEFAULT_SLOTS;
 static int lt_ring_buf = LT_DEFAULT_BUF;
@@ -263,7 +264,7 @@ shmem_busy_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void
 	struct ltproto_socket_shmem_busy *ssk = (struct ltproto_socket_shmem_busy *)sk;
 	struct lt_net_ring_slot *slot;
 	unsigned char *cur;
-	unsigned int len = orig_len;
+	unsigned int len = orig_len, cycles = 0;
 
 	if (ssk->rx_ring == NULL) {
 		/* Force TCP connection */
@@ -279,6 +280,10 @@ shmem_busy_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, void
 		//fprintf (stderr, "read: %d\n", ssk->cur_rx);
 		/* Busy loop here */
 		while (EMPTY (ssk->rx_ring)) {
+			if (++cycles == MAX_BUSY_LOOP) {
+				sched_yield ();
+				cycles = 0;
+			}
 			continue;
 		}
 
@@ -314,7 +319,7 @@ shmem_busy_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, con
 	struct ltproto_socket_shmem_busy *ssk = (struct ltproto_socket_shmem_busy *)sk;
 	struct lt_net_ring_slot *slot;
 	const unsigned char *cur;
-	unsigned int len = orig_len;
+	unsigned int len = orig_len, cycles = 0;
 
 	if (ssk->tx_ring == NULL) {
 		/* Force TCP connection */
@@ -326,6 +331,10 @@ shmem_busy_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, con
 	for (;;) {
 		//fprintf (stderr, "write: %d\n", ssk->cur_tx);
 		while (FULL (ssk->tx_ring)) {
+			if (++cycles == MAX_BUSY_LOOP) {
+				sched_yield ();
+				cycles = 0;
+			}
 			continue;
 		}
 		slot = &ssk->tx_ring->slot[ssk->tx_ring->head];
