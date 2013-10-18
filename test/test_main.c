@@ -117,7 +117,7 @@ perform_module_test_latency (const char *mname,
 	uint64_t *msec;
 	short port;
 	int i, res;
-	const int cycles = 20;
+	const int cycles = 64;
 
 	if (!compact) {
 		printf ("Test for module: %s\n", mname);

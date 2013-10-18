@@ -24,7 +24,7 @@ if len(sys.argv) > 3:
 if len(sys.argv) > 4:
   colourmap = sys.argv[4]
 else:
-  colourmap = "winter"
+  colourmap = "PuBu"
 
 data = map(lambda(x): (8589934592. / x) / (1024 * 1024) * (1000000000.), numpy.loadtxt(input_file))
 
