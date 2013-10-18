@@ -14,7 +14,7 @@ else
 	fi
 fi
 
-TYPES="null pipe unix shmem shmem_sleep shmem_pipe"
+TYPES="null pipe unix shmem shmem_busy shmem_sleep shmem_pipe"
 TFILE="/tmp/ltproto_lat"
 
 for _type in $TYPES ; do
