@@ -276,7 +276,7 @@ fork_server (u_short port, u_int recv_buffer_size, u_int repeat_count,
 	uint8_t *recv_buf;
 	sigset_t sigmask;
 	struct sigaction sa;
-	uint32_t hash, test;
+	uint32_t hash, test, check, i, j;
 	int r, remain, done;
 	uint64_t total = (uint64_t)recv_buffer_size * (uint64_t)repeat_count;
 	uint32_t (*hf)(char *in, uint32_t len);
@@ -338,6 +338,7 @@ do_client:
 			break;
 		}
 		conn = ltproto_accept (sock, (struct sockaddr *)&sin, &slen);
+		i = 0;
 		for (;;) {
 			remain = recv_buffer_size;
 			r = 0;
@@ -359,6 +360,14 @@ do_client:
 				test = hf (recv_buf + sizeof (hash), recv_buffer_size - sizeof (hash));
 				assert (hash == test);
 			}
+			else {
+				memset (&test, i % 256, sizeof (test));
+				for (j = 0; j < recv_buffer_size / sizeof (test); j ++) {
+					check = *(uint32_t *)&recv_buf[j * sizeof (uint32_t)];
+					assert (check == test);
+				}
+			}
+			i ++;
 		}
 
 		ltproto_close (conn);
@@ -414,7 +423,6 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod,
 		perror ("connect failed");
 		goto err;
 	}
-	memset (send_buf, 0x1, send_buffer_size);
 
 	gperf_profiler_init (modname);
 	for (i = 0; i < repeat_count; i ++) {
@@ -422,6 +430,9 @@ do_client (u_short port, u_int send_buffer_size, u_int repeat_count, void *mod,
 			memset (send_buf + sizeof (hash), i % 256, send_buffer_size - sizeof (hash));
 			hash = hf (send_buf + sizeof (hash), send_buffer_size - sizeof (hash));
 			memcpy (send_buf, &hash, sizeof (hash));
+		}
+		else {
+			memset (send_buf, i % 256, send_buffer_size);
 		}
 		r = 0;
 		done = 0;

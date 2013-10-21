@@ -72,8 +72,8 @@ static int lt_ring_slots = LT_DEFAULT_SLOTS;
 static int lt_ring_buf = LT_DEFAULT_BUF;
 
 struct lt_net_ring_slot {
-	unsigned int len;
-	unsigned int flags;
+	volatile unsigned int len;
+	volatile unsigned int flags;
 #define LT_SLOT_FLAG_READY 0x1
 	char __pad[CACHELINE - sizeof(unsigned int) * 2];
 };
@@ -284,14 +284,14 @@ shmem_sleep_read_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, voi
 			cur += slot->len;
 			len -= slot->len;
 			ssk->cur_rx = LT_RING_NEXT (ssk->rx_ring, ssk->cur_rx);
-			lt_ptr_atomic_set (&slot->flags, 0);
+			slot->flags = 0;
 		}
 		else {
 			memcpy (cur, LT_RING_BUF (ssk->rx_ring, ssk->cur_rx), len);
 			if (len == slot->len) {
 				/* Aligned case */
 				ssk->cur_rx = LT_RING_NEXT (ssk->rx_ring, ssk->cur_rx);
-				lt_ptr_atomic_set (&slot->flags, 0);
+				slot->flags = 0;
 			}
 			else {
 				memcpy (LT_RING_BUF (ssk->rx_ring, ssk->cur_rx),
@@ -333,13 +333,13 @@ shmem_sleep_write_func (struct lt_module_ctx *ctx, struct ltproto_socket *sk, co
 			cur += slot->len;
 			len -= slot->len;
 			ssk->cur_tx = LT_RING_NEXT (ssk->tx_ring, ssk->cur_tx);
-			lt_ptr_atomic_set (&slot->flags, LT_SLOT_FLAG_READY);
+			slot->flags = LT_SLOT_FLAG_READY;
 		}
 		else {
 			memcpy (LT_RING_BUF (ssk->tx_ring, ssk->cur_tx), cur, len);
 			ssk->cur_tx = LT_RING_NEXT (ssk->tx_ring, ssk->cur_tx);
 			slot->len = len;
-			lt_ptr_atomic_set (&slot->flags, LT_SLOT_FLAG_READY);
+			slot->flags = LT_SLOT_FLAG_READY;
 			return orig_len;
 		}
 	}

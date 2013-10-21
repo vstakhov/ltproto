@@ -258,7 +258,7 @@ wait_for_memory_passive (volatile int *ptr, int desired_value, volatile int *ptr
 	return 0;
 }
 
-#define BUSY_CYCLES 64
+#define BUSY_CYCLES 256
 
 /**
 * Wait for memory at pointer to get desired value, not changing state using sleep
@@ -277,7 +277,7 @@ wait_for_memory_sleep (volatile int *ptr, int desired_value, int nsec)
 
 	for (;;) {
 		while (cycles++ < BUSY_CYCLES) {
-			val = lt_int_atomic_get (ptr);
+			val = *ptr;
 
 			if (val == desired_value) {
 				return 0;
