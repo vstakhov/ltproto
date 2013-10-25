@@ -111,10 +111,4 @@ void gperf_profiler_init (const char *descr);
  */
 void gperf_profiler_stop (void);
 
-/**
- * Bind this process to a specific core
- * @param corenum number of core
- */
-void bind_to_core (int corenum, int numa_node);
-
 #endif /* TEST_UTILS_H_ */

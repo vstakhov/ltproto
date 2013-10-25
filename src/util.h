@@ -192,4 +192,11 @@ ssize_t lt_read (int fd, void *buf, size_t buflen);
  */
 ssize_t lt_write (int fd, const void *buf, size_t buflen);
 
+/**
+ * Bind this process to a specific core
+ * @param corenum number of core
+ * @param numa_node number of numa node or -1 to be detected from core number
+ */
+void bind_to_core (int corenum, int numa_node);
+
 #endif /* UTIL_H_ */
