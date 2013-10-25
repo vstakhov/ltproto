@@ -250,6 +250,8 @@ IF(HAVE_SYS_CPUSET_H)
 	CHECK_SYMBOL_EXISTS(cpuset_setaffinity "sys/param.h;sys/cpuset.h" HAVE_CPUSET_SETAFFINITY)
 ENDIF(HAVE_SYS_CPUSET_H)
 
+CHECK_SYMBOL_EXISTS(SCM_RIGHTS "sys/types.h;sys/socket.h;sys/un.h" HAVE_SCM_RIGHTS)
+
 CHECK_C_SOURCE_RUNS("
 #include <sys/types.h>
 #include <sys/socket.h>

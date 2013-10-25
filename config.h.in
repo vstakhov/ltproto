@@ -118,6 +118,8 @@
 
 #cmakedefine HAVE_CPUID_H		1
 
+#cmakedefine HAVE_SCM_RIGHTS	1
+
 
 /* cdefs */
 #ifdef HAVE_SYS_CDEFS_H
