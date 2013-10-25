@@ -140,12 +140,15 @@ main (int argc, char **argv)
 		}
 	}
 
-	if (argc < 2) {
+	argc -= optind;
+	argv += optind;
+
+	if (argc < 1) {
 		usage ();
 	}
 
 	sun.sun_family = AF_UNIX;
-	snprintf (sun.sun_path, sizeof (sun.sun_path), "%s", argv[1]);
+	snprintf (sun.sun_path, sizeof (sun.sun_path), "%s", argv[0]);
 	unlink (sun.sun_path);
 #ifdef BSD
 	sun.sun_len = SUN_LEN (&sun);
@@ -159,10 +162,6 @@ main (int argc, char **argv)
 		perror ("bind failed");
 		exit (EXIT_FAILURE);
 	}
-	if (listen (sk, -1) == -1) {
-		perror ("listen failed");
-		exit (EXIT_FAILURE);
-	}
 
 	/* Fork workers */
 	cur = cores;
@@ -170,7 +169,7 @@ main (int argc, char **argv)
 		worker = fork ();
 		switch (worker) {
 		case 0:
-			if (cur != NULL) {
+			if (cur == NULL) {
 				do_worker (sk, -1, numa_node);
 			}
 			else {

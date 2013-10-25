@@ -670,7 +670,6 @@ bind_to_core (int corenum, int numa_node)
 		}
 		if (node != -1) {
 			numa_set_preferred (node);
-			ltproto_bind_numa (node);
 		}
 	}
 #endif

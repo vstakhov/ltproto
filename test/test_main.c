@@ -585,9 +585,7 @@ main (int argc, char **argv, char **envp)
 	}
 
 	argc -= optind;
-	argv -= optind;
-
-
+	argv += optind;
 
 	ltproto_init ();
 

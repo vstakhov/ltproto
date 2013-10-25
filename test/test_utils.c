@@ -302,6 +302,7 @@ fork_server (u_short port, u_int recv_buffer_size, u_int repeat_count,
 do_client:
 	lt_setproctitle ("%s[server], %s buf", mname, print_bytes (recv_buffer_size));
 	bind_to_core (corenum, numa_node);
+	ltproto_bind_numa (numa_node);
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
 	memset (&sa, 0, sizeof (sa));
@@ -486,6 +487,7 @@ fork_server_latency (u_short port, void *mod, int corenum, int numa_node)
 
 do_client:
 	bind_to_core (corenum, numa_node);
+	ltproto_bind_numa (numa_node);
 	sigemptyset (&sigmask);
 	sigaddset (&sigmask, SIGUSR1);
 	memset (&sa, 0, sizeof (sa));
