@@ -199,4 +199,13 @@ ssize_t lt_write (int fd, const void *buf, size_t buflen);
  */
 void bind_to_core (int corenum, int numa_node);
 
+
+/**
+ * Calculate sha512 of the specified buffer
+ * @param src source bytes
+ * @param inlen length
+ * @param out out buffer (must be at least of EVP_MAX_MD_SIZE * 2 + 1)
+ */
+void lt_sha512_buf (const char *src, size_t inlen, char *out);
+
 #endif /* UTIL_H_ */

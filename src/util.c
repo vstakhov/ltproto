@@ -29,6 +29,7 @@
 #include <stdarg.h>
 #ifdef HAVE_OPENSSL
 #include <openssl/rand.h>
+#include <openssl/evp.h>
 #endif
 #ifdef HAVE_FUTEX
 #include <linux/futex.h>
@@ -673,4 +674,24 @@ bind_to_core (int corenum, int numa_node)
 		}
 	}
 #endif
+}
+
+
+void
+lt_sha512_buf (const char *src, size_t inlen, char *out)
+{
+	char dig[EVP_MAX_MD_SIZE];
+	EVP_MD_CTX *sign_ctx = NULL;
+	unsigned diglen, i;
+
+
+	sign_ctx = EVP_MD_CTX_create ();
+
+	EVP_DigestInit (sign_ctx, EVP_sha256 ());
+	EVP_DigestUpdate (sign_ctx, src, inlen);
+	EVP_DigestFinal (sign_ctx, dig, &diglen);
+
+	for (i = 0; i < diglen; i ++) {
+		sprintf (out + (i * 2), "%02x", dig[i]);
+	}
 }
