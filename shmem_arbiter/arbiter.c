@@ -35,6 +35,14 @@
  * opens shared memory segments and pass descriptors to the calling processes
  */
 
+struct arbiter_maps {
+	char *key;
+	int fd;
+	unsigned ref;
+	UT_hash_handle hh;
+};
+
+struct arbiter_map *gam = NULL;
 
 static void
 usage (void)
@@ -43,6 +51,7 @@ usage (void)
 	exit (EXIT_FAILURE);
 }
 
+/* XXX: we need shared memory hashes for multiply workers, now we do not support it */
 static void
 do_worker (int sk, int core, int numa_node)
 {
