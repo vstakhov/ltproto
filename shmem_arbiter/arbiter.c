@@ -25,6 +25,7 @@
 #include "ltproto.h"
 #include "util.h"
 #include "arbiter_proto.h"
+#include "uthash.h"
 #include <sys/wait.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
@@ -35,14 +36,21 @@
  * opens shared memory segments and pass descriptors to the calling processes
  */
 
-struct arbiter_maps {
+struct arbiter_map {
 	char *key;
+	char *path;
 	int fd;
 	unsigned ref;
+	size_t len;
 	UT_hash_handle hh;
 };
 
 struct arbiter_map *gam = NULL;
+
+struct ltproto_arbiter_msg_reply {
+	struct ltproto_arbiter_msg msg;
+	size_t payload;
+};
 
 static void
 usage (void)
@@ -51,13 +59,110 @@ usage (void)
 	exit (EXIT_FAILURE);
 }
 
+static void
+arbiter_send_reply (int fd, int code, struct sockaddr *addr, socklen_t slen, struct arbiter_map *map)
+{
+	struct msghdr msg;
+	struct iovec iov;
+	struct ltproto_arbiter_msg_reply ram;
+	struct cmsghdr *cmsg;
+	char buf[CMSG_SPACE(sizeof (int))];
+
+
+	memset (&msg, 0, sizeof (msg));
+	switch (code) {
+	case LT_ARBITER_SEND_FD:
+		if (map->ref < 2) {
+			msg.msg_control = buf;
+			msg.msg_controllen = sizeof buf;
+			cmsg = CMSG_FIRSTHDR (&msg);
+			cmsg->cmsg_level = SOL_SOCKET;
+			cmsg->cmsg_type = SCM_RIGHTS;
+			cmsg->cmsg_len = CMSG_LEN (sizeof(int));
+			memcpy (CMSG_DATA (cmsg), &map->fd, sizeof (int));
+			msg.msg_controllen = cmsg->cmsg_len;
+			map->ref ++;
+			ram.msg.msg = code;
+			ram.msg.msg_len = sizeof (size_t);
+			ram.payload = map->len;
+		}
+		else {
+			printf ("more than 2 connections to %s\n", map->key);
+			code = LT_ARBITER_ERROR;
+			ram.msg.msg_len = 0;
+		}
+		break;
+	default:
+		ram.msg.msg_len = 0;
+		break;
+	}
+
+
+	iov.iov_base = &ram;
+	iov.iov_len = sizeof (struct ltproto_arbiter_msg) + ram.msg.msg_len;
+	msg.msg_name = addr;
+	msg.msg_namelen = slen;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+
+	if (sendmsg (fd, &msg, 0) == -1) {
+		printf ("sendmsg err: %s\n", strerror (errno));
+	}
+}
+
+static struct arbiter_map *
+arbiter_create_map (struct ltproto_arbiter_msg *am)
+{
+	struct arbiter_map *new = NULL;
+	size_t shmem_len;
+
+	memcpy (&shmem_len, am->payload, sizeof (size_t));
+	new = malloc (sizeof (struct arbiter_map));
+	if (new == NULL) {
+		return NULL;
+	}
+	new->key = strdup (am->name);
+	new->path = malloc (EVP_MAX_MD_SIZE * 2 + 2);
+	new->path[0] = '/';
+	lt_sha512_buf (am->name, strlen (am->name), new->path + 1);
+
+	new->fd = shm_open (new->path, O_RDWR | O_CREAT | O_EXCL, 00600);
+	if (new->fd == -1) {
+		goto err;
+	}
+	if (ftruncate (new->fd, shmem_len) == -1) {
+		goto err;
+	}
+
+	return new;
+err:
+	if (new != NULL) {
+		if (new->key != NULL) {
+			free (new->key);
+		}
+		if (new->path != NULL) {
+			shm_unlink (new->path);
+			free (new->path);
+		}
+		if (new->fd != -1) {
+			close (new->fd);
+		}
+		free (new);
+	}
+
+	return NULL;
+}
+
 /* XXX: we need shared memory hashes for multiply workers, now we do not support it */
 static void
 do_worker (int sk, int core, int numa_node)
 {
 	struct msghdr msg;
 	struct iovec iov;
-	char buf[512];
+	int r, len;
+	char buf[512], *np = NULL;
+	struct ltproto_arbiter_msg *am;
+	struct arbiter_map *nmap, *found;
 
 	bind_to_core (core, numa_node);
 	iov.iov_base = buf;
@@ -67,13 +172,91 @@ do_worker (int sk, int core, int numa_node)
 	msg.msg_iovlen = 1;
 
 	for (;;) {
-		if (recvmsg (sk, &msg, 0) == -1) {
+		if ((r = recvmsg (sk, &msg, 0) == -1)) {
 			break;
 		}
+
 		printf ("got message on %d\n", core);
+		if (r < sizeof (struct ltproto_arbiter_msg)) {
+			printf ("partial message received, discard\n");
+			arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+		}
+		am = (struct ltproto_arbiter_msg *)buf;
+		switch (am->msg) {
+		case LT_ARBITER_REGISTER:
+			np = memchr (am->name, 0, sizeof (am->name));
+			if (np == NULL) {
+				printf ("invalid name received, discard\n");
+				arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+			}
+			else {
+				len = np - am->name;
+				HASH_FIND (hh, gam, am->name, len, found);
+				if (found != NULL) {
+					printf ("duplicate name %s received, discard\n", am->name);
+					arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+				}
+				else {
+					if (r < sizeof (struct ltproto_arbiter_msg) + sizeof (size_t)) {
+						printf ("truncated reply for %s received, discard\n", am->name);
+						arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+					}
+					else {
+						nmap = arbiter_create_map (am);
+						if (nmap != NULL) {
+							arbiter_send_reply (sk, LT_ARBITER_SEND_FD, msg.msg_name, msg.msg_namelen, nmap);
+						}
+						else {
+							arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+						}
+					}
+				}
+			}
+			break;
+		case LT_ARBITER_CONNECT:
+			np = memchr (am->name, 0, sizeof (am->name));
+			if (np == NULL) {
+				printf ("invalid name received, discard\n");
+				arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+			}
+			else {
+				len = np - am->name;
+				HASH_FIND (hh, gam, am->name, len, found);
+				if (found == NULL) {
+					printf ("name %s is not registered, discard\n", am->name);
+					arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+				}
+				else {
+					arbiter_send_reply (sk, LT_ARBITER_SEND_FD, msg.msg_name, msg.msg_namelen, found);
+				}
+			}
+			break;
+		case LT_ARBITER_UNREGISTER:
+			np = memchr (am->name, 0, sizeof (am->name));
+			if (np == NULL) {
+				printf ("invalid name received, discard\n");
+				arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+			}
+			else {
+				len = np - am->name;
+				HASH_FIND (hh, gam, am->name, len, found);
+				if (found == NULL) {
+					printf ("name %s is not registered, discard\n", am->name);
+					arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+				}
+				else {
+					arbiter_send_reply (sk, LT_ARBITER_SUCCESS, msg.msg_name, msg.msg_namelen, NULL);
+				}
+			}
+			break;
+		default:
+			printf ("invalid message %d received, discard\n", am->msg);
+			arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+			break;
+		}
 	}
 
-	exit (EXIT_SUCCESS);
+	exit (-errno);
 }
 
 struct arbiter_core {
