@@ -114,17 +114,20 @@ static struct arbiter_map *
 arbiter_create_map (struct ltproto_arbiter_msg *am)
 {
 	struct arbiter_map *new = NULL;
-	size_t shmem_len;
+	size_t shmem_len, keylen;
 
 	memcpy (&shmem_len, am->payload, sizeof (size_t));
 	new = malloc (sizeof (struct arbiter_map));
 	if (new == NULL) {
 		return NULL;
 	}
+	keylen = strlen (am->name);
+	new->ref = 0;
+	new->len = shmem_len;
 	new->key = strdup (am->name);
 	new->path = malloc (EVP_MAX_MD_SIZE * 2 + 2);
 	new->path[0] = '/';
-	lt_sha512_buf (am->name, strlen (am->name), new->path + 1);
+	lt_sha512_buf (am->name, keylen, new->path + 1);
 
 	new->fd = shm_open (new->path, O_RDWR | O_CREAT | O_EXCL, 00600);
 	if (new->fd == -1) {
@@ -133,6 +136,8 @@ arbiter_create_map (struct ltproto_arbiter_msg *am)
 	if (ftruncate (new->fd, shmem_len) == -1) {
 		goto err;
 	}
+
+	HASH_ADD_KEYPTR (hh, gam, new->key, keylen, new);
 
 	return new;
 err:
@@ -151,6 +156,25 @@ err:
 	}
 
 	return NULL;
+}
+
+static void
+arbiter_remove_map (struct arbiter_map *map)
+{
+	if (--map->ref == 0) {
+		if (map->key != NULL) {
+			free (map->key);
+		}
+		if (map->path != NULL) {
+			shm_unlink (map->path);
+			free (map->path);
+		}
+		if (map->fd != -1) {
+			close (map->fd);
+		}
+		HASH_DELETE (hh, gam, map);
+		free (map);
+	}
 }
 
 /* XXX: we need shared memory hashes for multiply workers, now we do not support it */
@@ -245,6 +269,7 @@ do_worker (int sk, int core, int numa_node)
 					arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
 				}
 				else {
+					arbiter_remove_map (found);
 					arbiter_send_reply (sk, LT_ARBITER_SUCCESS, msg.msg_name, msg.msg_namelen, NULL);
 				}
 			}
