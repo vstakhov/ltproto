@@ -60,7 +60,7 @@ usage (void)
 }
 
 static void
-arbiter_send_reply (int fd, int code, struct sockaddr *addr, socklen_t slen, struct arbiter_map *map)
+arbiter_send_reply (int fd, int code, struct arbiter_map *map)
 {
 	struct msghdr msg;
 	struct iovec iov;
@@ -82,7 +82,6 @@ arbiter_send_reply (int fd, int code, struct sockaddr *addr, socklen_t slen, str
 			memcpy (CMSG_DATA (cmsg), &map->fd, sizeof (int));
 			msg.msg_controllen = cmsg->cmsg_len;
 			map->ref ++;
-			ram.msg.msg = code;
 			ram.msg.msg_len = sizeof (size_t);
 			ram.payload = map->len;
 		}
@@ -97,11 +96,9 @@ arbiter_send_reply (int fd, int code, struct sockaddr *addr, socklen_t slen, str
 		break;
 	}
 
-
+	ram.msg.msg = code;
 	iov.iov_base = &ram;
 	iov.iov_len = sizeof (struct ltproto_arbiter_msg) + ram.msg.msg_len;
-	msg.msg_name = addr;
-	msg.msg_namelen = slen;
 	msg.msg_iov = &iov;
 	msg.msg_iovlen = 1;
 
@@ -129,7 +126,7 @@ arbiter_create_map (struct ltproto_arbiter_msg *am)
 	new->path[0] = '/';
 	lt_sha512_buf (am->name, keylen, new->path + 1);
 
-	new->fd = shm_open (new->path, O_RDWR | O_CREAT | O_EXCL, 00600);
+	new->fd = shm_open (new->path, O_RDWR | O_CREAT  | O_TRUNC, 00600);
 	if (new->fd == -1) {
 		goto err;
 	}
@@ -183,10 +180,12 @@ do_worker (int sk, int core, int numa_node)
 {
 	struct msghdr msg;
 	struct iovec iov;
-	int r, len;
+	int r, len, nsk;
 	char buf[512], *np = NULL;
 	struct ltproto_arbiter_msg *am;
 	struct arbiter_map *nmap, *found;
+	struct sockaddr_un sun;
+	socklen_t slen = sizeof (sun);
 
 	bind_to_core (core, numa_node);
 	iov.iov_base = buf;
@@ -196,88 +195,96 @@ do_worker (int sk, int core, int numa_node)
 	msg.msg_iovlen = 1;
 
 	for (;;) {
-		if ((r = recvmsg (sk, &msg, 0) == -1)) {
-			break;
+		nsk = accept (sk, &sun, &slen);
+		if (nsk == -1) {
+			perror ("accept failed");
+			continue;
 		}
-
-		printf ("got message on %d\n", core);
-		if (r < sizeof (struct ltproto_arbiter_msg)) {
-			printf ("partial message received, discard\n");
-			arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
-		}
-		am = (struct ltproto_arbiter_msg *)buf;
-		switch (am->msg) {
-		case LT_ARBITER_REGISTER:
-			np = memchr (am->name, 0, sizeof (am->name));
-			if (np == NULL) {
-				printf ("invalid name received, discard\n");
-				arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+		for (;;) {
+			if ((r = recvmsg (nsk, &msg, 0)) <= 0) {
+				close (nsk);
+				break;
 			}
-			else {
-				len = np - am->name;
-				HASH_FIND (hh, gam, am->name, len, found);
-				if (found != NULL) {
-					printf ("duplicate name %s received, discard\n", am->name);
-					arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+
+			printf ("got message on %d\n", core);
+			if (r < sizeof (struct ltproto_arbiter_msg)) {
+				printf ("partial message received, discard\n");
+				arbiter_send_reply (nsk, LT_ARBITER_ERROR, NULL);
+			}
+			am = (struct ltproto_arbiter_msg *)buf;
+			switch (am->msg) {
+			case LT_ARBITER_REGISTER:
+				np = memchr (am->name, 0, sizeof (am->name));
+				if (np == NULL) {
+					printf ("invalid name received, discard\n");
+					arbiter_send_reply (nsk, LT_ARBITER_ERROR, NULL);
 				}
 				else {
-					if (r < sizeof (struct ltproto_arbiter_msg) + sizeof (size_t)) {
-						printf ("truncated reply for %s received, discard\n", am->name);
-						arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+					len = np - am->name;
+					HASH_FIND (hh, gam, am->name, len, found);
+					if (found != NULL) {
+						printf ("duplicate name %s received, discard\n", am->name);
+						arbiter_send_reply (nsk, LT_ARBITER_ERROR, NULL);
 					}
 					else {
-						nmap = arbiter_create_map (am);
-						if (nmap != NULL) {
-							arbiter_send_reply (sk, LT_ARBITER_SEND_FD, msg.msg_name, msg.msg_namelen, nmap);
+						if (r < sizeof (struct ltproto_arbiter_msg) + sizeof (size_t)) {
+							printf ("truncated reply for %s received, discard\n", am->name);
+							arbiter_send_reply (nsk, LT_ARBITER_ERROR, NULL);
 						}
 						else {
-							arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+							nmap = arbiter_create_map (am);
+							if (nmap != NULL) {
+								arbiter_send_reply (nsk, LT_ARBITER_SEND_FD, nmap);
+							}
+							else {
+								arbiter_send_reply (nsk, LT_ARBITER_ERROR, NULL);
+							}
 						}
 					}
 				}
-			}
-			break;
-		case LT_ARBITER_CONNECT:
-			np = memchr (am->name, 0, sizeof (am->name));
-			if (np == NULL) {
-				printf ("invalid name received, discard\n");
-				arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
-			}
-			else {
-				len = np - am->name;
-				HASH_FIND (hh, gam, am->name, len, found);
-				if (found == NULL) {
-					printf ("name %s is not registered, discard\n", am->name);
-					arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+				break;
+			case LT_ARBITER_CONNECT:
+				np = memchr (am->name, 0, sizeof (am->name));
+				if (np == NULL) {
+					printf ("invalid name received, discard\n");
+					arbiter_send_reply (nsk, LT_ARBITER_ERROR, NULL);
 				}
 				else {
-					arbiter_send_reply (sk, LT_ARBITER_SEND_FD, msg.msg_name, msg.msg_namelen, found);
+					len = np - am->name;
+					HASH_FIND (hh, gam, am->name, len, found);
+					if (found == NULL) {
+						printf ("name %s is not registered, discard\n", am->name);
+						arbiter_send_reply (nsk, LT_ARBITER_ERROR, NULL);
+					}
+					else {
+						arbiter_send_reply (nsk, LT_ARBITER_SEND_FD, found);
+					}
 				}
-			}
-			break;
-		case LT_ARBITER_UNREGISTER:
-			np = memchr (am->name, 0, sizeof (am->name));
-			if (np == NULL) {
-				printf ("invalid name received, discard\n");
-				arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
-			}
-			else {
-				len = np - am->name;
-				HASH_FIND (hh, gam, am->name, len, found);
-				if (found == NULL) {
-					printf ("name %s is not registered, discard\n", am->name);
-					arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
+				break;
+			case LT_ARBITER_UNREGISTER:
+				np = memchr (am->name, 0, sizeof (am->name));
+				if (np == NULL) {
+					printf ("invalid name received, discard\n");
+					arbiter_send_reply (nsk, LT_ARBITER_ERROR, NULL);
 				}
 				else {
-					arbiter_remove_map (found);
-					arbiter_send_reply (sk, LT_ARBITER_SUCCESS, msg.msg_name, msg.msg_namelen, NULL);
+					len = np - am->name;
+					HASH_FIND (hh, gam, am->name, len, found);
+					if (found == NULL) {
+						printf ("name %s is not registered, discard\n", am->name);
+						arbiter_send_reply (nsk, LT_ARBITER_ERROR, NULL);
+					}
+					else {
+						arbiter_remove_map (found);
+						arbiter_send_reply (nsk, LT_ARBITER_SUCCESS, NULL);
+					}
 				}
+				break;
+			default:
+				printf ("invalid message %d received, discard\n", am->msg);
+				arbiter_send_reply (nsk, LT_ARBITER_ERROR, NULL);
+				break;
 			}
-			break;
-		default:
-			printf ("invalid message %d received, discard\n", am->msg);
-			arbiter_send_reply (sk, LT_ARBITER_ERROR, msg.msg_name, msg.msg_namelen, NULL);
-			break;
 		}
 	}
 
@@ -331,6 +338,7 @@ main (int argc, char **argv)
 	pid_t worker;
 	struct arbiter_core *cores = NULL, *cur;
 	struct sockaddr_un sun;
+	mode_t um;
 
 	while ((c = getopt (argc, argv, "c:n:h")) != -1) {
 		switch (c) {
@@ -370,13 +378,22 @@ main (int argc, char **argv)
 #ifdef BSD
 	sun.sun_len = SUN_LEN (&sun);
 #endif
-	sk = socket (AF_UNIX, SOCK_DGRAM, 0);
+	um = umask (0);
+	sk = socket (AF_UNIX, SOCK_STREAM, 0);
 	if (sk == -1) {
 		perror ("socket failed");
 		exit (EXIT_FAILURE);
 	}
 	if (bind (sk, (struct sockaddr *)&sun, sizeof (sun)) == -1) {
 		perror ("bind failed");
+		exit (EXIT_FAILURE);
+	}
+
+	fchmod (sk, 00777);
+	umask (um);
+
+	if (listen (sk, -1) == -1) {
+		perror ("listen failed");
 		exit (EXIT_FAILURE);
 	}
 
