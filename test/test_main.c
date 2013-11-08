@@ -60,7 +60,7 @@ static void
 perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t bytes,
 		int server_core, int client_core, int numa_node, int strict_check)
 {
-	pid_t spid;
+	pid_t spid, cpid;
 	void *tdata, *mod;
 	uint64_t msec;
 	short port;
@@ -75,19 +75,24 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	spid = fork_server (port, buflen, bytes / (uint64_t)buflen, mod, server_core, numa_node, strict_check, mname);
 	assert (spid != -1);
 	wait_for_server ();
-	bind_to_core (client_core, numa_node);
-	start_test_time (&tdata);
-	assert (do_client (port, buflen, bytes / (uint64_t)buflen, mod, mname, strict_check) != -1);
-	msec = end_test_time (tdata);
-	if (!compact) {
-		printf ("Send buffer: %s, ", print_bytes (buflen));
-		printf ("Recv buffer: %s; ", print_bytes (buflen));
-		printf ("Transmitted %s in ", print_bytes (bytes));
-		printf ("%.6f milliseconds, ", round_test_time (msec));
-		printf ("%s/sec transfer speed\n", print_bytes (bytes / (msec / 1000000000.)));
-	}
-	else {
-		printf ("%llu\n", (long long unsigned)msec);
+	cpid = fork ();
+	if (cpid == 0) {
+		bind_to_core (client_core, numa_node);
+		start_test_time (&tdata);
+		assert (do_client (port, buflen, bytes / (uint64_t)buflen, mod, mname, strict_check) != -1);
+		msec = end_test_time (tdata);
+		if (!compact) {
+			printf ("Send buffer: %s, ", print_bytes (buflen));
+			printf ("Recv buffer: %s; ", print_bytes (buflen));
+			printf ("Transmitted %s in ", print_bytes (bytes));
+			printf ("%.6f milliseconds, ", round_test_time (msec));
+			printf ("%s/sec transfer speed\n", print_bytes (bytes / (msec / 1000000000.)));
+		}
+		else {
+			printf ("%llu\n", (long long unsigned)msec);
+		}
+		ltproto_destroy ();
+		exit (EXIT_SUCCESS);
 	}
 
 #if 0
@@ -96,8 +101,8 @@ perform_module_test_simple (const char *mname, unsigned long buflen, uint64_t by
 	msec = end_test_time (tdata);
 	printf ("Send buffer: 4Mb, Recv buffer: 4Mb; Transmitted 8Gb in %.6f milliseconds\n", round_test_time (msec));
 #endif
-	fflush (stdout);
-	waitpid (spid, &res, WNOHANG);
+	waitpid (cpid, &res, 0);
+	waitpid (spid, &res, 0);
 }
 
 static int
