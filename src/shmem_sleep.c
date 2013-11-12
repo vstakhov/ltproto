@@ -84,17 +84,17 @@ struct lt_net_ring {
 	unsigned int avail;
 	unsigned int ref;
 
-	size_t buf_offset;
+	char *buf_ptr;
 	size_t buf_size;
 
 	struct lt_net_ring_slot slot[0];
 };
 
 #define LT_RING_BUF(ring, index)                         \
-        ((char *)(ring) + (ring)->buf_offset + ((index)*(ring)->buf_size))
+        ((char *)(ring)->buf_ptr + ((index)*(ring)->buf_size))
 
 #define LT_RING_NEXT(r, i)                               \
-        ((i)+1 == (r)->num_slots ? 0 : (i) + 1 )
+        ((i + 1) & ((r)->num_slots - 1))
 #define LT_RING_SIZE(slots, bufsize)                     \
         (sizeof (struct lt_net_ring) + sizeof (struct lt_net_ring_slot) * (slots) +  \
         (bufsize) * (slots))
@@ -118,7 +118,7 @@ shmem_sleep_init_ring (struct lt_net_ring *ring, int nslots, int bufsize)
 {
 	memset (ring, 0, LT_RING_SIZE (nslots, bufsize));
 	ring->buf_size = bufsize;
-	ring->buf_offset = offsetof(struct lt_net_ring, slot) +
+	ring->buf_ptr = (char *)ring + offsetof (struct lt_net_ring, slot) +
 				nslots * sizeof (struct lt_net_ring_slot);
 	ring->num_slots = nslots;
 	ring->ref = 1;
